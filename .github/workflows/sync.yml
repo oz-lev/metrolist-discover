@@ -80,6 +80,9 @@ jobs:
 
           Upstream changelog: https://github.com/MetrolistGroup/Metrolist/releases/tag/${UP}
           EOF
+          # optional hand-written notes for this line of releases (e.g. the v2 experimental feature list)
+          if [ -f RELEASE_NOTES.md ]; then { cat RELEASE_NOTES.md; echo; echo "---"; echo; cat notes.md; } > notes2.md && mv notes2.md notes.md; fi
+          # always a normal "latest" release: the in-app updater reads /releases/latest, which skips pre-releases
           gh release create "v${V}" out/Metrolist-Discover.apk out/Metrolist.apk --title "${V}" --notes-file notes.md --latest
       - name: Record synced tag
         if: needs.check.outputs.latest != needs.check.outputs.current
