@@ -17,8 +17,8 @@ object Achievements {
         val badges: List<Badge>, val weekly: Weekly,
     )
 
-    fun levelOf(xp: Long): Int = floor(sqrt(xp / 250.0)).toInt() + 1
-    fun xpForLevel(level: Int): Long = ((level - 1).toLong() * (level - 1)) * 250L
+    fun levelOf(xp: Long): Int = floor(sqrt(xp / 1000.0)).toInt() + 1
+    fun xpForLevel(level: Int): Long = ((level - 1).toLong() * (level - 1)) * 1000L
 
     fun compute(h: History, nowTs: Long, vibe: VibeEstimator = VibeEstimator(), minPlayedMs: Long = 30_000L): Profile {
         val plays = h.plays.filter { it.timestampMs <= nowTs }
@@ -56,14 +56,14 @@ object Achievements {
         fun b(id: String, emoji: String, he: String, desc: String, value: Double, goal: Double) =
             Badge(id, emoji, he, desc, (value / goal).coerceIn(0.0, 1.0), value >= goal)
         val badges = listOf(
-            b("night_owl", "🦉", "ינשוף לילה", "50 שירים בין חצות ל-4 לפנות בוקר", night.toDouble(), 50.0),
-            b("early_bird", "🐦", "ציפור בוקר", "50 שירים בין 5 ל-9 בבוקר", morning.toDouble(), 50.0),
-            b("loyal", "💛", "נאמן", "200 השמעות לאותו אמן", topArtistPlays.toDouble(), 200.0),
-            b("explorer", "🧭", "מגלה ארצות", "100 אמנים שונים", artists.size.toDouble(), 100.0),
-            b("drop_hunter", "💥", "צייד דרופים", "100 שירי EDM / פאנק", drops.toDouble(), 100.0),
-            b("mizrahi_heart", "🎶", "לב מזרחי", "300 שירים מזרחיים", mizrahi.toDouble(), 300.0),
-            b("marathon", "🏃", "מרתון", "4 שעות האזנה ביום אחד", maxDayMin.toDouble(), 240.0),
-            b("streak7", "🔥", "רצף של שבוע", "7 ימים ברצף עם מוזיקה", best.toDouble(), 7.0),
+            b("night_owl", "🦉", "ינשוף לילה", "300 שירים בין חצות ל-4 לפנות בוקר", night.toDouble(), 300.0),
+            b("early_bird", "🐦", "ציפור בוקר", "300 שירים בין 5 ל-9 בבוקר", morning.toDouble(), 300.0),
+            b("loyal", "💛", "נאמן", "500 השמעות לאותו אמן", topArtistPlays.toDouble(), 500.0),
+            b("explorer", "🧭", "מגלה ארצות", "300 אמנים שונים", artists.size.toDouble(), 300.0),
+            b("drop_hunter", "💥", "צייד דרופים", "500 שירי EDM / פאנק", drops.toDouble(), 500.0),
+            b("mizrahi_heart", "🎶", "לב מזרחי", "1,000 שירים מזרחיים", mizrahi.toDouble(), 1000.0),
+            b("marathon", "🏃", "מרתון", "6 שעות האזנה ביום אחד", maxDayMin.toDouble(), 360.0),
+            b("streak30", "🔥", "רצף של חודש", "30 ימים ברצף עם מוזיקה", best.toDouble(), 30.0),
         )
 
         // weekly mini summary

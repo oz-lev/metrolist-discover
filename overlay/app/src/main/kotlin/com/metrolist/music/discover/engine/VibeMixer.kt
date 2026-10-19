@@ -52,9 +52,13 @@ class VibeMixer(private val random: Random = Random.Default) {
     fun score(p: PoolTrack, t: VibeTarget, familiar: Double): Double =
         1.0 - 2.2 * p.vibe.distanceTo(t) + 0.35 * p.affinity - 0.6 * abs(p.familiarity - familiar) + random.nextDouble() * 0.06
 
+    /** Sort by a score computed ONCE per track (the score has a little noise; sorting on a live noisy comparator crashes TimSort). */
+    private fun rank(list: List<PoolTrack>, f: (PoolTrack) -> Double): List<PoolTrack> =
+        list.map { it to f(it) }.sortedByDescending { it.second }.map { it.first }
+
     /** A plain mood mix: best fitting tracks, artist-diversified. */
     fun build(pool: List<PoolTrack>, t: VibeTarget, size: Int = 25, familiar: Double = 0.5): List<PoolTrack> =
-        diversify(pool.distinctBy { it.track.id }.sortedByDescending { score(it, t, familiar) }, size)
+        diversify(rank(pool.distinctBy { it.track.id }) { score(it, t, familiar) }, size)
 
     /** "רגש להיפך": starts sad and calm, ends happy party. Mood score never goes down along the list. */
     fun moodFlip(pool: List<PoolTrack>, size: Int = 20): List<PoolTrack> {
@@ -73,7 +77,7 @@ class VibeMixer(private val random: Random = Random.Default) {
     /** "אני נוסע 25 דקות": a mix whose total length lands as close as possible to [minutes] (goal: within ±3%, never worse than ±10% when the pool allows it). */
     fun tripLength(pool: List<PoolTrack>, minutes: Int, t: VibeTarget = MoodPreset.DRIVE.target): List<PoolTrack> {
         val goal = minutes * 60
-        val ranked = pool.filter { it.track.durationSec in 60..900 }.distinctBy { it.track.id }.sortedByDescending { score(it, t, 0.6) }
+        val ranked = rank(pool.filter { it.track.durationSec in 60..900 }.distinctBy { it.track.id }) { score(it, t, 0.6) }
         if (ranked.isEmpty()) return emptyList()
         val chosen = ArrayList<PoolTrack>()
         var total = 0
@@ -128,7 +132,7 @@ class VibeMixer(private val random: Random = Random.Default) {
             VibeAction.MORE_LIKE_THIS -> {
                 val t = VibeTarget(energy = cv.energy, valence = cv.valence, mizrahi = cv.mizrahi, cinematic = cv.cinematic,
                     tags = cv.tags.filter { it != VibeTag.HEBREW }.toSet())
-                diversify(others.sortedByDescending { score(it, t, 0.5) + (if (it.track.id in related) 0.4 else 0.0) +
+                diversify(rank(others) { score(it, t, 0.5) + (if (it.track.id in related) 0.4 else 0.0) +
                     (if (it.track.mainArtist == current.track.mainArtist) 0.15 else 0.0) }, size, maxPerArtist = 3)
             }
             VibeAction.CHANGE_VIBE -> {
@@ -137,12 +141,11 @@ class VibeMixer(private val random: Random = Random.Default) {
                     valence = if (cv.valence > 0.5) cv.valence - 0.3 else cv.valence + 0.35,
                     mizrahi = 1.0 - cv.mizrahi,
                 )
-                diversify(others.filter { it.vibe.distanceTo(VibeTarget(cv.energy, cv.valence, cv.mizrahi)) >= 0.2 }
-                    .sortedByDescending { score(it, t, 0.5) }, size)
+                diversify(rank(others.filter { it.vibe.distanceTo(VibeTarget(cv.energy, cv.valence, cv.mizrahi)) >= 0.2 }) { score(it, t, 0.5) }, size)
             }
             VibeAction.ENERGY_UP -> {
                 val t = VibeTarget(energy = min(1.0, cv.energy + 0.22), valence = max(cv.valence, 0.6), mizrahi = cv.mizrahi)
-                diversify(others.filter { it.vibe.energy >= cv.energy - 0.02 }.sortedByDescending { score(it, t, 0.5) }, size)
+                diversify(rank(others.filter { it.vibe.energy >= cv.energy - 0.02 }) { score(it, t, 0.5) }, size)
                     .sortedBy { it.vibe.energy }
             }
         }

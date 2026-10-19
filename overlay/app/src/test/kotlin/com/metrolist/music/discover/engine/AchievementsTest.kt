@@ -27,10 +27,14 @@ class AchievementsTest {
         assertTrue(p.level >= 2)
         assertTrue(p.levelProgress in 0.0..1.0)
         assertEquals(8, p.badges.size)
-        assertTrue(p.badges.first { it.id == "night_owl" }.earned)   // 120 plays between 01:00 and 03:00
-        assertTrue(p.badges.first { it.id == "streak7" }.earned)
-        assertTrue(p.badges.first { it.id == "drop_hunter" }.earned)
+        val owl = p.badges.first { it.id == "night_owl" }            // 120 plays between 01:00 and 03:00, goal 300
+        assertFalse(owl.earned); assertEquals(0.4, owl.progress, 1e-9)
+        assertEquals(10.0 / 30, p.badges.first { it.id == "streak30" }.progress, 1e-9)
+        assertEquals(120.0 / 500, p.badges.first { it.id == "drop_hunter" }.progress, 1e-9)
         assertFalse(p.badges.first { it.id == "explorer" }.earned)
+        val many = ArrayList<PlayEvent>()
+        for (d in 1..19) for (k in 0 until 20) many += PlayEvent("t${k % 10}", ts(d, 2), 180_000)
+        assertTrue(Achievements.compute(History(tracks, many), ts(19, 20)).badges.first { it.id == "night_owl" }.earned)
         assertEquals(84, p.weekly.plays)
     }
 
@@ -45,8 +49,8 @@ class AchievementsTest {
 
     @Test fun levelCurve() {
         assertEquals(1, Achievements.levelOf(0))
-        assertEquals(2, Achievements.levelOf(250))
-        assertEquals(3, Achievements.levelOf(1000))
-        assertEquals(1000L, Achievements.xpForLevel(3))
+        assertEquals(2, Achievements.levelOf(1000))
+        assertEquals(3, Achievements.levelOf(4000))
+        assertEquals(4000L, Achievements.xpForLevel(3))
     }
 }

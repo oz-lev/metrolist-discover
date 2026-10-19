@@ -13,6 +13,20 @@
 - **בועת סטטיסטיקה** — בכל פתיחה: עובדה אחת עליך (מחושבת מההיסטוריה). לחיצה = פופ, החלקה = עובדה הבאה. אפשר לכבות.
 - **⚙ (כפתור הכיוונון ליד הכותרת)** — כמה מההמלצות שמעת עד הסוף / עשית לייק / דילגת, כמה פעמים המנוע כבר כיוונן את עצמו, "איפוס למידה", ו"בדיקה על ההיסטוריה שלי".
 
+## חדש ב-v2 (ניסיונית) 🧪
+- **בית חדש** — ברכה לפי השעה, צ׳יפים של מצב רוח (להתעורר / נסיעה / חדר כושר / לילה / מזרחי), כרטיס ענק "המיקס היומי שלך", אריחים למרכז המיקסים / חיפושים / רולטה / רגש להיפך, "גילוי בשבילך" עם % התאמה, והבועה. (אפשר לחזור לבית הקלאסי בהגדרות המוזרות.)
+- **מרכז המיקסים 🎛️** — חוגת מצב רוח + סליידרים (אנרגיה, מזרחי↔EDM, מוכר↔חדש), אימוג׳י (😤 😢 🥳 😌 🔥), "רגש להיפך" (מעצוב למסיבה), "אני נוסע X דקות" (פלייליסט באורך הנסיעה), "מצב דרמה" ורולטה.
+- **בנגן** — "עוד כזה" / "שנה וייב" / "אנרגיה ↑" משנים את השירים הבאים בתור, ופס צבעים חי בצבעי העטיפה.
+- **חיפושים מוזרים 🔎** — "כמו X אבל במזרחית / רמיקס / יותר שקט…", מכונת זמן (מה שמעתי לפני שבוע / חודש / שנה), חיפוש לפי שורה מהשיר, חיפוש לפי צבע העטיפה. זמזום: בקרוב (בינתיים כפתור לזיהוי שיר שמתנגן לידך).
+- **הגדרות מוזרות 🧪** — כמה האלגוריתם מעז, כמה מזרחית מותר, עונש על דילוגים, חסימות לפי ימים ושעות ("בלי שירי פרידה בשישי"), מצב שכנים (עוצמה ובס אחרי 23:00), נעילת חזרות, רק מתחת ל-3 דקות, בלי רמיקסים / הופעות, מצב צב, הפתעה כל 5 שירים, מצב טעם של מישהו אחר לשעה, רולטה, איפוס.
+- **פרופיל 🏆** — רמה ו-XP, רצפים, 8 הישגים וסיכום שבועי.
+- **מיקס לילה אופליין 📥** — בלילה, בטעינה וב-Wi-Fi, המיקס היומי יורד לבד (25 שירים; את של אתמול שלא אהבת הוא מנקה).
+
+את האנרגיה ומצב הרוח של שיר YouTube לא נותן, אז המנוע מעריך אותם מהאמן, מילים בשם השיר (remix / slowed / phonk / live / acoustic), כתב עברי, שירים קשורים, ומהדילוגים והשמיעות המלאות שלך — ומתקן את עצמו עם הזמן.
+
+## בהמשך (מפת דרכים)
+מוזיקה לפי מזג אוויר · מצב קריוקי · מצב רכב · ווידג׳טים · Blend עם חבר · Drop Radar · מעברי DJ · חיפוש בזמזום · מילים במסך הנעילה.
+
 ## איך זה משתפר לבד
 כל שיר מהגילוי ששומעים עד הסוף, עושים לו לייק או מדלגים עליו — מזיז קצת את משקלות הדירוג (בגבולות בטוחים), ואת אחוז הגילוי (בין 15% ל-45%).
 
@@ -30,12 +44,23 @@ UPSTREAM_TAG                         last upstream Metrolist release the fork is
 overlay/                             NEW files copied into a clean upstream checkout - never edits upstream files
   app/src/main/kotlin/com/metrolist/music/discover/
     engine/                          pure Kotlin engine (no Android imports): profile, candidates, ranking,
-                                     diversity, self-tuner, evaluator, stats facts, mixes, synthetic world
+                                     diversity, self-tuner, evaluator, stats facts, mixes, synthetic world;
+                                     v2: Vibe.kt (energy/mood heuristic + self-correction, one config object),
+                                     VibeMixer.kt (mood/dial/flip/trip-length/drama/reshape), Rules.kt (day/hour
+                                     blocks, no-repeat lock, caps, neighbours window, taste presets),
+                                     Searches.kt (query rewriting, time machine, colour buckets, roulette), Achievements.kt
     DiscoverHooks.kt                 the single entry point upstream code calls (playback sessions)
     DiscoverStore.kt                 own SQLite db "metrolist_discover.db" (plays incl. <30 s skips, recs, kv)
     DiscoverRepository.kt            reads Metrolist's Room tables read-only + innertube calls -> engine
     ui/DiscoverHomeSection.kt        home row, mixes, stats bubble (Popup), settings bottom sheet
     ui/DiscoverViewModel.kt          @HiltViewModel
+    v2/                              v2.0-experimental (Android glue + Compose UI, own package)
+      V2Settings.kt                  every "weird setting" (Discover's own kv table)
+      V2Engine.kt                    pool/snapshot, mixes, searches, colour scan, vibe feedback
+      V2Service.kt                   queue guard + neighbours mode (attached from MusicService.onCreate)
+      V2Offline.kt                   overnight offline mix (JobScheduler job + Hilt entry point)
+      ui/                            V2Home, MixesHub, NowPlaying (vibe bar), SearchLab, WeirdSettings, Profile, Routes
+  app/src/release/AndroidManifest.xml  merged into release builds only: declares the offline JobService (no permission)
   app/src/main/res/{values,values-iw}/discover_strings.xml, drawable/discover_ic_*.xml
   app/src/test/...                   JUnit tests + discover/baseline.properties (evaluator gate)
 tools/apply-overlay.sh               copy overlay + insert hooks (fails if upstream ever ships a same-named file)
@@ -45,7 +70,7 @@ tools/backup_to_tsv.py               Metrolist backup/song.db -> TSV for the CLI
 .github/actions/{build-apk,engine-check}, .github/workflows/{build.yml,sync.yml}
 ```
 
-## Hook points (the entire upstream footprint: 2 lines, 0 Gradle changes)
+## Hook points (the entire upstream footprint: 6 anchor-based hooks in 5 upstream files, 0 Gradle file changes)
 1. `app/src/main/kotlin/com/metrolist/music/playback/MusicService.kt`, in `onPlaybackStatsReady(...)`, right after `val mediaItem = ...`:
    `runCatching { com.metrolist.music.discover.DiscoverHooks.onPlaybackStats(this, database, mediaItem, playbackStats.totalPlayTimeMs, dataStore.get(PauseListenHistoryKey, false)) }`
    (respects "pause listen history"; Metrolist itself only stores sessions >= 30 s, the hook also records the short ones = skips).
@@ -56,7 +81,21 @@ tools/backup_to_tsv.py               Metrolist backup/song.db -> TSV for the CLI
    are pointed at `com.metrolist.music.discover.DiscoverUpdate` (this repo's releases; the KMP check goes to a tag that never exists).
    `apply_hooks.py` refuses to build if any `MetrolistGroup/Metrolist` URL remains in Updater.kt, so the fork can never offer the upstream APK.
 
-All hook lines carry the marker `[metrolist-discover hook]`. App id / name use upstream's own env overrides
+4. `app/src/main/kotlin/com/metrolist/music/ui/screens/NavigationBuilder.kt`, first line inside `fun NavGraphBuilder.navigationBuilder(...) {`:
+   `com.metrolist.music.discover.v2.ui.discoverRoutes(this, navController)` — adds the v2 screens as `discover/mixes`, `discover/search`,
+   `discover/weird`, `discover/profile` (prefix keeps them clear of upstream routes).
+5. `app/src/main/kotlin/com/metrolist/music/ui/player/Player.kt`, portrait layout, between `mediaMetadata?.let { controlsContent(it) }` and
+   `Spacer(Modifier.height(30.dp))`: `com.metrolist.music.discover.v2.ui.NowPlayingVibeBar()` (vibe buttons + art-colour strip).
+   The anchor must match exactly once, otherwise the build fails.
+6. `app/src/main/kotlin/com/metrolist/music/playback/MusicService.kt`, in `onCreate()`, right after `playerInitialized.value = true`:
+   `runCatching { com.metrolist.music.discover.v2.V2Service.attach(this) }` — queue guard (skips auto-advanced songs that break the
+   weird-settings rules; a song picked by hand is never skipped), neighbours mode (caps `playerVolume` and applies a low-shelf cut through
+   Metrolist's own `EqualizerService`, restores both when the window ends), schedules the overnight job.
+
+The v2 Home needs no extra hook: hook 2's `discoverForYouSection()` renders `V2HomeSection()` (or the v1 section when the user turns the new
+home off). All hook lines carry the marker `[metrolist-discover hook] <name>` (stats, home, updater, routes, player, service);
+`apply_hooks.py` exits 3 with `::error::` if any anchor is missing or ambiguous, which fails the sync bot and opens a `sync-failure` issue.
+`overlay/app/src/release/AndroidManifest.xml` is a new file (manifest merge), not an edit; `apply-overlay.sh` fails if upstream ever ships it. App id / name use upstream's own env overrides
 (`METROLIST_APPLICATION_ID=com.metrolist.music.oz`, `METROLIST_APP_NAME="Metrolist Discover"`), versionName gets `+<commit>`
 via upstream's `METROLIST_BUILD_COMMIT`. Flavor: **foss** (upstream's own updater, re-pointed; no Cast). No permission is added.
 
@@ -67,6 +106,11 @@ Releases are titled exactly that comparable version (e.g. `13.7.0.5`, tag `v13.7
 and `Metrolist.apk` (the asset name upstream's updater picks for the universal foss build). The updater compares the release title with
 `BASE_VERSION_NAME` and opens the asset's download URL. This needs the repo to be public (unauthenticated GitHub API); on a private repo the
 API answers 404, `Updater.checkForUpdate()` fails inside its `runCatching`, and the app simply shows no update.
+
+`VERSION_SUFFIX` (currently `-v2exp`) is appended to the displayed versionName only (`13.7.0.N-v2exp+<commit>`). The release title and
+`BASE_VERSION_NAME` stay purely numeric on purpose: `Updater.compareVersions` splits on "." and reads a non-numeric part as 0, so a title like
+`13.7.0.4-v2exp` would compare as lower than `13.7.0.2`. Releases are published as normal ("latest") releases, never pre-releases: the updater
+reads `/releases/latest`, which GitHub never points at a pre-release.
 
 ## Engine
 - Signals: Metrolist `event` (songId, timestamp, playTime) + own short-session log; `song.liked/likedDate`, `dateDownload`,
