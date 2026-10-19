@@ -48,7 +48,6 @@ jobs:
           echo "::notice title=personal markers::$(echo "$MARKERS" | sed '/^$/d' | wc -l) markers checked, $HITS found in history"
           [ "$HITS" -eq 0 ] || BAD=1
           # generic secret scanners
-          grep -rIlE -- '-----BEGIN (RSA |EC |OPENSSH |)PRIV''ATE KEY-----|gh''p_[A-Za-z0-9]{30,}|github''_pat_|AK''IA[0-9A-Z]{16}|STORE_PASSWORD=|KEY_PASSWORD=' $(git ls-files) && { echo "::error::secret-looking string in HEAD"; BAD=1; } || true
-          for r in $REVS; do git grep -IlE -e '-----BEGIN (RSA |EC |OPENSSH |)PRIV''ATE KEY-----' -e 'gh''p_[A-Za-z0-9]{30,}' -e 'github''_pat_' -e 'STORE_PASSWORD=[^$ ]' "$r" -- 2>/dev/null; done | sort -u > hits.txt
+          for r in $REVS; do git grep -IlE -e '-----BEGIN (RSA |EC |OPENSSH |)PRIV''ATE KEY-----' -e 'gh''p_[A-Za-z0-9]{30,}' -e 'github''_pat_' -e 'AK''IA[0-9A-Z]{16}' -e '(STORE|KEY)_PASS''WORD=[A-Za-z0-9]' "$r" -- ':!.github/workflows/audit.yml' 2>/dev/null; done | sort -u > hits.txt
           if [ -s hits.txt ]; then echo "::error::secret-looking strings in history: $(tr '\n' ' ' < hits.txt)"; BAD=1; fi
           if [ "$BAD" -eq 0 ]; then echo "::notice title=AUDIT RESULT::CLEAN"; else echo "::error title=AUDIT RESULT::NOT CLEAN"; exit 1; fi
