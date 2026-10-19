@@ -60,45 +60,27 @@ jobs:
         uses: ./.github/actions/build-apk
         with:
           upstream-tag: ${{ needs.check.outputs.latest }}
+          build-number: ${{ github.run_number }}
           keystore: ${{ secrets.KEYSTORE }}
           keystore-password: ${{ secrets.KEYSTORE_PASSWORD }}
           key-alias: ${{ secrets.KEY_ALIAS }}
           key-password: ${{ secrets.KEY_PASSWORD }}
-
-      - name: Encrypted copy for the maintainer (AES-256, key in DL_KEY secret)
-        if: always() && steps.apk.outputs.apk != ''
-        env:
-          DL_KEY: ${{ secrets.DL_KEY }}
-        run: |
-          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "${{ steps.apk.outputs.apk }}" -out apk.enc -pass env:DL_KEY
-          URL=""
-          for i in 1 2; do
-            URL=$(curl -sS -m 120 -F reqtype=fileupload -F time=72h -F fileToUpload=@apk.enc https://litterbox.catbox.moe/resources/internals/api.php || true)
-            case "$URL" in https://*) break;; *) URL="";; esac
-          done
-          if [ -z "$URL" ]; then URL=$(curl -sS -m 120 -F file=@apk.enc https://tmpfiles.org/api/v1/upload | jq -r '.data.url // empty' | sed 's#tmpfiles.org/#tmpfiles.org/dl/#' || true); fi
-          echo "enc_url=$URL" >> "$GITHUB_OUTPUT"
-          echo "DLURL=$URL" > dl-url.txt
-        id: enc
 
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           UP="${{ needs.check.outputs.latest }}"
-          TAG="discover-${UP}-r${{ github.run_number }}"
+          V="${{ steps.apk.outputs.base-version }}"
           cat > notes.md <<EOF
-          Metrolist Discover ${{ steps.apk.outputs.version-name }}, built on upstream Metrolist ${UP}.
+          **Metrolist Discover ${{ steps.apk.outputs.version-name }}** — built on upstream Metrolist ${UP}.
 
-          **התקנה:** מורידים את Metrolist-Discover.apk ומתקינים. מותקן לצד Metrolist המקורית (שם חבילה com.metrolist.music.oz).
-          עדכון: מתקינים מעל הגרסה הקודמת של Metrolist Discover.
+          התקנה: מורידים את Metrolist-Discover.apk (או Metrolist.apk — אותו קובץ, בשם שהעדכון האוטומטי באפליקציה מחפש) ומתקינים.
+          מותקן לצד Metrolist המקורית (com.metrolist.music.oz). גרסה חדשה מתקינים מעל הקודמת.
 
           Upstream changelog: https://github.com/MetrolistGroup/Metrolist/releases/tag/${UP}
-          <!-- ${DLURL:-} -->
           EOF
-          DLURL="${{ steps.enc.outputs.enc_url }}"
-          sed -i "s#<!-- .* -->#<!-- dl: ${DLURL} -->#" notes.md
-          gh release create "$TAG" "${{ steps.apk.outputs.apk }}" --title "Metrolist Discover ${{ steps.apk.outputs.version-name }}" --notes-file notes.md --latest
+          gh release create "v${V}" out/Metrolist-Discover.apk out/Metrolist.apk --title "${V}" --notes-file notes.md --latest
       - name: Record synced tag
         if: needs.check.outputs.latest != needs.check.outputs.current
         run: |

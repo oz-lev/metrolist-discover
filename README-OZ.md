@@ -17,7 +17,8 @@
 כל שיר מהגילוי ששומעים עד הסוף, עושים לו לייק או מדלגים עליו — מזיז קצת את משקלות הדירוג (בגבולות בטוחים), ואת אחוז הגילוי (בין 15% ל-45%).
 
 ## עדכונים
-בוט בגיטהאב בודק כל בוקר אם יצאה גרסה חדשה של Metrolist. אם כן — הוא בונה, חותם ומפרסם APK חדש ב-Releases. מתקינים מעל. אם משהו נשבר, נפתח Issue בריפו והגרסה הקודמת נשארת.
+בוט בגיטהאב בודק כל בוקר אם יצאה גרסה חדשה של Metrolist. אם כן — הוא בונה, חותם ומפרסם APK חדש ב-Releases. אם משהו נשבר, נפתח Issue בריפו והגרסה הקודמת נשארת.
+העדכון האוטומטי של האפליקציה (הגדרות ← עדכונים) מסתכל על הריפו **הזה** בלבד — אף פעם לא יציע את Metrolist המקורית. כשיש גרסה חדשה מופיעה הודעה; לוחצים, מורידים ומתקינים מעל.
 
 ---
 
@@ -51,9 +52,21 @@ tools/backup_to_tsv.py               Metrolist backup/song.db -> TSV for the CLI
 2. `app/src/main/kotlin/com/metrolist/music/ui/screens/HomeScreen.kt`, inside the home `LazyColumn`, right after the `item { ChipsRow(...) }` block:
    `com.metrolist.music.discover.ui.discoverForYouSection(this)`
 
-Both lines carry the marker `[metrolist-discover hook]`. App id / name use upstream's own env overrides
+3. `app/src/main/kotlin/com/metrolist/music/utils/Updater.kt`: the three constants `GITHUB_API_BASE`, `KMP_LATEST_RELEASE_URL`, `KMP_APK_NAME`
+   are pointed at `com.metrolist.music.discover.DiscoverUpdate` (this repo's releases; the KMP check goes to a tag that never exists).
+   `apply_hooks.py` refuses to build if any `MetrolistGroup/Metrolist` URL remains in Updater.kt, so the fork can never offer the upstream APK.
+
+All hook lines carry the marker `[metrolist-discover hook]`. App id / name use upstream's own env overrides
 (`METROLIST_APPLICATION_ID=com.metrolist.music.oz`, `METROLIST_APP_NAME="Metrolist Discover"`), versionName gets `+<commit>`
-via upstream's `METROLIST_BUILD_COMMIT`. Flavor: **izzy** (no self-updater pointing at upstream APKs, no Cast). No permission is added.
+via upstream's `METROLIST_BUILD_COMMIT`. Flavor: **foss** (upstream's own updater, re-pointed; no Cast). No permission is added.
+
+## Versioning / in-app updates
+`ci/discover.init.gradle` (passed with `-I`, no upstream file touched) sets versionCode = upstream versionCode × 10000 + bot build number
+(the sync workflow's run number; plain CI builds use 0) and versionName / `BuildConfig.BASE_VERSION_NAME` = `<upstream version>.<build>`.
+Releases are titled exactly that comparable version (e.g. `13.7.0.5`, tag `v13.7.0.5`) and carry the APK twice: `Metrolist-Discover.apk`
+and `Metrolist.apk` (the asset name upstream's updater picks for the universal foss build). The updater compares the release title with
+`BASE_VERSION_NAME` and opens the asset's download URL. This needs the repo to be public (unauthenticated GitHub API); on a private repo the
+API answers 404, `Updater.checkForUpdate()` fails inside its `runCatching`, and the app simply shows no update.
 
 ## Engine
 - Signals: Metrolist `event` (songId, timestamp, playTime) + own short-session log; `song.liked/likedDate`, `dateDownload`,

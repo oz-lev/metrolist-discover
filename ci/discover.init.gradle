@@ -1,0 +1,20 @@
+// Metrolist Discover: version numbering without editing upstream's build.gradle.kts.
+// Passed to Gradle with -I by CI. DISCOVER_VERSION_CODE = upstream versionCode * 10000 + bot build number,
+// so every bot release installs over the previous one; DISCOVER_VERSION_NAME = <upstream version>.<build>
+// (also BuildConfig.BASE_VERSION_NAME, which the in-app updater compares with the release title).
+def vc = System.getenv("DISCOVER_VERSION_CODE")
+def vn = System.getenv("DISCOVER_VERSION_NAME")
+def commit = System.getenv("METROLIST_BUILD_COMMIT")
+allprojects {
+    pluginManager.withPlugin("com.android.application") {
+        def comps = project.extensions.getByName("androidComponents")
+        comps.finalizeDsl { ext ->
+            if (vc) ext.defaultConfig.versionCode = vc.toInteger()
+            if (vn) {
+                ext.defaultConfig.versionName = vn + (commit ? "+" + commit.take(7).toLowerCase() : "")
+                ext.defaultConfig.buildConfigField("String", "BASE_VERSION_NAME", "\"" + vn + "\"")
+            }
+            println("metrolist-discover: versionCode=" + ext.defaultConfig.versionCode + " versionName=" + ext.defaultConfig.versionName)
+        }
+    }
+}

@@ -58,8 +58,23 @@ def home_screen(src):
     hook = f"\n\n{indent}com.metrolist.music.discover.ui.discoverForYouSection(this) // {MARK}"
     return src[:i + 1] + hook + src[i + 1:]
 
+# Hook 3 - utils/Updater.kt: the in-app updater reads THIS fork's releases, never upstream's (or the KMP app's).
+def updater(src):
+    reps = [
+        (r'private const val GITHUB_API_BASE = "[^"]*"', "private const val GITHUB_API_BASE = com.metrolist.music.discover.DiscoverUpdate.API_BASE"),
+        (r'private const val KMP_LATEST_RELEASE_URL = "[^"]*"', "private const val KMP_LATEST_RELEASE_URL = com.metrolist.music.discover.DiscoverUpdate.KMP_URL"),
+        (r'private const val KMP_APK_NAME = "[^"]*"', "private const val KMP_APK_NAME = com.metrolist.music.discover.DiscoverUpdate.KMP_APK_NAME"),
+    ]
+    for pat, rep in reps:
+        src, n = re.subn(pat, rep + f" // {MARK}", src, count=1)
+        if n != 1 and "KMP" not in pat: return None
+    if "MetrolistGroup/Metrolist" in src:
+        return None  # some other upstream release URL appeared: refuse rather than silently offer upstream APKs
+    return src
+
 edit("app/src/main/kotlin/com/metrolist/music/playback/MusicService.kt", music_service)
 edit("app/src/main/kotlin/com/metrolist/music/ui/screens/HomeScreen.kt", home_screen)
+edit("app/src/main/kotlin/com/metrolist/music/utils/Updater.kt", updater)
 if errors:
     for e in errors: print("::error::" + e)
     sys.exit(3)

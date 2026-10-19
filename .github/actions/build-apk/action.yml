@@ -4,6 +4,10 @@ inputs:
   upstream-tag:
     description: Upstream Metrolist release tag (e.g. v13.7.0)
     required: true
+  build-number:
+    description: Bot build number (0 for plain CI builds, the sync run number for releases)
+    required: false
+    default: "0"
   keystore: {required: true}
   keystore-password: {required: true}
   key-alias: {required: true}
@@ -14,6 +18,9 @@ outputs:
     value: ${{ steps.sign.outputs.apk }}
   version-name:
     value: ${{ steps.sign.outputs.version }}
+  base-version:
+    description: Comparable version (upstream version + build number), also the release title
+    value: ${{ steps.gradle.outputs.base }}
 runs:
   using: composite
   steps:
@@ -30,6 +37,7 @@ runs:
       with: {distribution: temurin, java-version: "21"}
     - uses: gradle/actions/setup-gradle@v4
     - name: Engine unit tests (inside the real app build) + signed-release build
+      id: gradle
       shell: bash
       working-directory: up
       env:
@@ -37,12 +45,20 @@ runs:
         METROLIST_APP_NAME: Metrolist Discover
         METROLIST_BUILD_COMMIT: ${{ github.sha }}
         PULL_REQUEST: "false"
+        BUILD_NUMBER: ${{ inputs.build-number }}
       run: |
         chmod +x gradlew
         set -o pipefail
-        ./gradlew --console=plain --warning-mode none \
-          :app:testIzzyDebugUnitTest --tests 'com.metrolist.music.discover.*' \
-          :app:assembleIzzyRelease 2>&1 | tee "$RUNNER_TEMP/build.log"
+        UVC=$(grep -m1 -oE 'versionCode = [0-9]+' app/build.gradle.kts | grep -oE '[0-9]+')
+        UVN=$(grep -m1 -oE 'versionName = "[^"]+"' app/build.gradle.kts | cut -d'"' -f2)
+        [ -n "$UVC" ] && [ -n "$UVN" ] || { echo "::error::could not read upstream versionCode/versionName"; exit 1; }
+        export DISCOVER_VERSION_CODE=$(( UVC * 10000 + BUILD_NUMBER ))
+        export DISCOVER_VERSION_NAME="$UVN.$BUILD_NUMBER"
+        echo "versionCode $DISCOVER_VERSION_CODE, versionName $DISCOVER_VERSION_NAME"
+        echo "base=$DISCOVER_VERSION_NAME" >> "$GITHUB_OUTPUT"
+        ./gradlew --console=plain --warning-mode none -I "$GITHUB_WORKSPACE/ci/discover.init.gradle" \
+          :app:testFossDebugUnitTest --tests 'com.metrolist.music.discover.*' \
+          :app:assembleFossRelease 2>&1 | tee "$RUNNER_TEMP/build.log"
     - name: Report build errors as annotations
       if: failure()
       shell: bash
@@ -65,7 +81,7 @@ runs:
         KEY_PASS: ${{ inputs.key-password }}
       run: |
         BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
-        IN=$(find up/app/build/outputs/apk/izzy/release -name '*.apk' | head -1)
+        IN=$(find up/app/build/outputs/apk/foss/release -name '*.apk' | head -1)
         echo "$KS" | base64 -d > "$RUNNER_TEMP/ks.p12"
         mkdir -p out
         "$BT/zipalign" -f -p 4 "$IN" "$RUNNER_TEMP/aligned.apk"
@@ -75,5 +91,6 @@ runs:
         "$BT/apksigner" verify --print-certs out/Metrolist-Discover.apk | grep -i 'SHA-256'
         VER=$("$BT/aapt2" dump badging out/Metrolist-Discover.apk | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)
         "$BT/aapt2" dump badging out/Metrolist-Discover.apk | head -1
+        cp out/Metrolist-Discover.apk out/Metrolist.apk   # the name upstream's in-app updater looks for
         echo "apk=out/Metrolist-Discover.apk" >> "$GITHUB_OUTPUT"
         echo "version=$VER" >> "$GITHUB_OUTPUT"
