@@ -26,7 +26,7 @@ class AchievementsTest {
         assertEquals(10, p.bestStreak)
         assertTrue(p.level >= 2)
         assertTrue(p.levelProgress in 0.0..1.0)
-        assertEquals(8, p.badges.size)
+        assertEquals(16, p.badges.size)
         val owl = p.badges.first { it.id == "night_owl" }            // 120 plays between 01:00 and 03:00, goal 300
         assertFalse(owl.earned); assertEquals(0.4, owl.progress, 1e-9)
         assertEquals(10.0 / 30, p.badges.first { it.id == "streak30" }.progress, 1e-9)

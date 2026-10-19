@@ -5,9 +5,10 @@
 package com.metrolist.music.discover.engine
 
 import kotlin.math.floor
+import kotlin.math.min
 import kotlin.math.sqrt
 
-/** Profile: XP, level, streaks, 8 badges and a weekly mini summary, all from local history. */
+/** Profile: XP, level, streaks, 16 badges (8 from v2.0, 8 new in v2.1) and a weekly mini summary, all from local history. */
 object Achievements {
     data class Badge(val id: String, val emoji: String, val he: String, val descHe: String, val progress: Double, val earned: Boolean)
     data class Weekly(val plays: Int, val minutes: Int, val topArtist: String?, val topSong: String?, val newArtists: Int, val changePct: Int?)
@@ -64,6 +65,16 @@ object Achievements {
             b("mizrahi_heart", "🎶", "לב מזרחי", "1,000 שירים מזרחיים", mizrahi.toDouble(), 1000.0),
             b("marathon", "🏃", "מרתון", "6 שעות האזנה ביום אחד", maxDayMin.toDouble(), 360.0),
             b("streak30", "🔥", "רצף של חודש", "30 ימים ברצף עם מוזיקה", best.toDouble(), 30.0),
+            // v2.1
+            b("challenger", "🎯", "מקבל אתגרים", "10 אתגרים יומיים (אמן חדש ביום)", DailyChallenge.compute(h, nowTs).totalDone.toDouble(), 10.0),
+            b("weekend", "🎉", "לוחם סופ״ש", "500 שירים בשישי-שבת", good.count { DayClock.dayOfWeek(it.timestampMs) >= 5 && DayClock.dayOfWeek(it.timestampMs) <= 6 }.toDouble(), 500.0),
+            b("repeat_king", "🔁", "מלך הריפיט", "שיר אחד 100 פעמים", (good.groupingBy { it.trackId }.eachCount().values.maxOrNull() ?: 0).toDouble(), 100.0),
+            b("zen", "🧘", "זן", "פחות מ-20% דילוגים (אחרי 500 השמעות)", if (plays.size >= 500) (1.0 - skipRate) else 0.0, 0.8),
+            b("lover", "❤️", "מלא אהבה", "100 לייקים", likes.toDouble(), 100.0),
+            b("discoverer", "✨", "צייד גילויים", "100 שירים מ\"גילוי בשבילך\"", fromDiscover.toDouble(), 100.0),
+            b("century", "💯", "מאה שעות", "100 שעות האזנה", totalMinutes.toDouble(), 6000.0),
+            b("bilingual", "🌍", "דו-לשוני", "300 שירים בעברית ו-300 בלועזית", min(good.count { h.tracks[it.trackId]?.let { t -> Lang.isHebrew(t) } == true },
+                good.count { h.tracks[it.trackId]?.let { t -> !Lang.isHebrew(t) } == true }).toDouble(), 300.0),
         )
 
         // weekly mini summary
