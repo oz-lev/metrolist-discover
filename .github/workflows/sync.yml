@@ -1,0 +1,124 @@
+# Upstream sync bot.
+# Daily (and on demand): look up the latest Metrolist release. If it is newer than UPSTREAM_TAG,
+# rebuild the fork on top of it (clean upstream + overlay + hooks), run the engine tests and the
+# evaluator gate, sign, publish a GitHub release with the APK and record the new tag.
+# Anything that breaks (hook anchor gone, compile error, test/metric regression) fails the run
+# and opens (or updates) an issue labelled "sync-failure".
+name: Upstream sync
+on:
+  schedule:
+    - cron: "17 3 * * *"   # 06:17 Israel time
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: Build and publish a release even if upstream did not change
+        type: boolean
+        default: false
+permissions:
+  contents: write
+  issues: write
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      latest: ${{ steps.c.outputs.latest }}
+      current: ${{ steps.c.outputs.current }}
+      build: ${{ steps.c.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: c
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LATEST=$(gh api repos/MetrolistGroup/Metrolist/releases/latest --jq .tag_name)
+          CURRENT=$(tr -d '[:space:]' < UPSTREAM_TAG)
+          [ -n "$LATEST" ] || { echo "::error::could not read the latest upstream release"; exit 1; }
+          BUILD=false
+          if [ "$LATEST" != "$CURRENT" ] || [ "${{ inputs.force_release }}" = "true" ]; then BUILD=true; fi
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"; echo "current=$CURRENT" >> "$GITHUB_OUTPUT"; echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "upstream latest: $LATEST · synced: $CURRENT · build: $BUILD" | tee -a "$GITHUB_STEP_SUMMARY"
+  engine:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/engine-check
+  release:
+    needs: [check, engine]
+    if: needs.check.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build on upstream ${{ needs.check.outputs.latest }}
+        id: apk
+        uses: ./.github/actions/build-apk
+        with:
+          upstream-tag: ${{ needs.check.outputs.latest }}
+          keystore: ${{ secrets.KEYSTORE }}
+          keystore-password: ${{ secrets.KEYSTORE_PASSWORD }}
+          key-alias: ${{ secrets.KEY_ALIAS }}
+          key-password: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Encrypted copy for the maintainer (AES-256, key in DL_KEY secret)
+        if: always() && steps.apk.outputs.apk != ''
+        env:
+          DL_KEY: ${{ secrets.DL_KEY }}
+        run: |
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "${{ steps.apk.outputs.apk }}" -out apk.enc -pass env:DL_KEY
+          URL=""
+          for i in 1 2; do
+            URL=$(curl -sS -m 120 -F reqtype=fileupload -F time=72h -F fileToUpload=@apk.enc https://litterbox.catbox.moe/resources/internals/api.php || true)
+            case "$URL" in https://*) break;; *) URL="";; esac
+          done
+          if [ -z "$URL" ]; then URL=$(curl -sS -m 120 -F file=@apk.enc https://tmpfiles.org/api/v1/upload | jq -r '.data.url // empty' | sed 's#tmpfiles.org/#tmpfiles.org/dl/#' || true); fi
+          echo "enc_url=$URL" >> "$GITHUB_OUTPUT"
+          echo "DLURL=$URL" > dl-url.txt
+        id: enc
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          UP="${{ needs.check.outputs.latest }}"
+          TAG="discover-${UP}-r${{ github.run_number }}"
+          cat > notes.md <<EOF
+          Metrolist Discover ${{ steps.apk.outputs.version-name }}, built on upstream Metrolist ${UP}.
+
+          **התקנה:** מורידים את Metrolist-Discover.apk ומתקינים. מותקן לצד Metrolist המקורית (שם חבילה com.metrolist.music.oz).
+          עדכון: מתקינים מעל הגרסה הקודמת של Metrolist Discover.
+
+          Upstream changelog: https://github.com/MetrolistGroup/Metrolist/releases/tag/${UP}
+          <!-- ${DLURL:-} -->
+          EOF
+          DLURL="${{ steps.enc.outputs.enc_url }}"
+          sed -i "s#<!-- .* -->#<!-- dl: ${DLURL} -->#" notes.md
+          gh release create "$TAG" "${{ steps.apk.outputs.apk }}" --title "Metrolist Discover ${{ steps.apk.outputs.version-name }}" --notes-file notes.md --latest
+      - name: Record synced tag
+        if: needs.check.outputs.latest != needs.check.outputs.current
+        run: |
+          echo "${{ needs.check.outputs.latest }}" > UPSTREAM_TAG
+          git config user.name "metrolist-discover-bot"; git config user.email "bot@users.noreply.github.com"
+          git commit -am "sync: upstream ${{ needs.check.outputs.latest }}" && git push
+  report-failure:
+    needs: [check, engine, release]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh label create sync-failure --repo "$REPO" --color B60205 --description "Upstream sync bot failed" 2>/dev/null || true
+          BODY="The upstream sync bot failed while moving to Metrolist **${{ needs.check.outputs.latest }}** (synced: ${{ needs.check.outputs.current }}).
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          Likely causes: a hook anchor moved (tools/apply_hooks.py), an upstream API the engine glue uses changed, or the evaluator gate caught a regression.
+          The last good APK stays in Releases."
+          N=$(gh issue list --repo "$REPO" --label sync-failure --state open --json number --jq '.[0].number')
+          if [ -n "$N" ]; then gh issue comment "$N" --repo "$REPO" --body "$BODY"
+          else gh issue create --repo "$REPO" --label sync-failure --title "Upstream sync failed (${{ needs.check.outputs.latest }})" --body "$BODY"; fi

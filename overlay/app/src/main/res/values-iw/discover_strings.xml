@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Metrolist Discover (fork addition) -->
+<resources>
+    <string name="discover_title">גילוי בשבילך</string>
+    <string name="discover_subtitle">נלמד בטלפון שלך ממה שאתה שומע</string>
+    <string name="discover_smart_radio">רדיו חכם</string>
+    <string name="discover_mixes">המיקסים שלך</string>
+    <string name="discover_cold">תשמע בערך 20 שירים והגילוי יתחיל ללמוד את הטעם שלך. עד אז, הפיד שלמטה כאן בשבילך.</string>
+    <string name="discover_loading">מחפש לך שירים…</string>
+    <string name="discover_settings">גילוי</string>
+    <string name="discover_bubble_toggle">בועת סטטיסטיקה בפתיחת האפליקציה</string>
+    <string name="discover_reset">איפוס למידה</string>
+    <string name="discover_evaluate">בדיקה על ההיסטוריה שלי</string>
+    <string name="discover_counters">שירי גילוי שנוגנו (30 יום): %1$d · עד הסוף %2$d%% · לייק %3$d%% · דילוג %4$d%%</string>
+    <string name="discover_tuning">כיוונון עצמי: %1$d עדכונים · אחוז גילוי %2$d%%</string>
+    <string name="discover_privacy">הכל מחושב בטלפון הזה. שום מידע על ההאזנה שלך לא יוצא ממנו.</string>
+    <string name="discover_eval_none">צריך לפחות 200 נגינות בהיסטוריה.</string>
+    <string name="discover_eval_header">מסתירים את 14 הימים האחרונים ומנחשים מה שמעת (recall):</string>
+    <string name="discover_eval_new">שירים חדשים</string>
+    <string name="discover_eval_all">כל השירים</string>
+    <string name="discover_reason_forgotten">אהבת פעם</string>
+    <string name="discover_reason_artist">חדש מאמן שאתה אוהב</string>
+    <string name="discover_reason_similar">אמן דומה</string>
+    <string name="discover_reason_explore">משהו חדש</string>
+    <string name="discover_reason_hour">מתאים לשעה</string>
+    <string name="discover_reason_because">כי אתה שומע %1$s</string>
+    <string name="discover_reason_for_you">בשבילך</string>
+</resources>

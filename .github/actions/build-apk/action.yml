@@ -1,0 +1,66 @@
+name: Build Metrolist Discover APK
+description: Clean upstream Metrolist at a tag + the Discover overlay -> tests -> signed release APK
+inputs:
+  upstream-tag:
+    description: Upstream Metrolist release tag (e.g. v13.7.0)
+    required: true
+  keystore: {required: true}
+  keystore-password: {required: true}
+  key-alias: {required: true}
+  key-password: {required: true}
+outputs:
+  apk:
+    description: Path of the signed APK
+    value: ${{ steps.sign.outputs.apk }}
+  version-name:
+    value: ${{ steps.sign.outputs.version }}
+runs:
+  using: composite
+  steps:
+    - name: Fetch upstream ${{ inputs.upstream-tag }}
+      shell: bash
+      run: |
+        rm -rf up
+        git clone --quiet --depth 1 --branch "${{ inputs.upstream-tag }}" https://github.com/MetrolistGroup/Metrolist.git up
+        git -C up log -1 --format='upstream %h %s'
+    - name: Apply the Discover overlay + hooks
+      shell: bash
+      run: bash tools/apply-overlay.sh up
+    - uses: actions/setup-java@v4
+      with: {distribution: temurin, java-version: "21"}
+    - uses: gradle/actions/setup-gradle@v4
+    - name: Engine unit tests (inside the real app build) + signed-release build
+      shell: bash
+      working-directory: up
+      env:
+        METROLIST_APPLICATION_ID: com.metrolist.music.oz
+        METROLIST_APP_NAME: Metrolist Discover
+        METROLIST_BUILD_COMMIT: ${{ github.sha }}
+        PULL_REQUEST: "false"
+      run: |
+        chmod +x gradlew
+        ./gradlew --console=plain --warning-mode none \
+          :app:testIzzyReleaseUnitTest --tests 'com.metrolist.music.discover.*' \
+          :app:assembleIzzyRelease
+    - name: Sign
+      id: sign
+      shell: bash
+      env:
+        KS: ${{ inputs.keystore }}
+        KS_PASS: ${{ inputs.keystore-password }}
+        KEY_ALIAS: ${{ inputs.key-alias }}
+        KEY_PASS: ${{ inputs.key-password }}
+      run: |
+        BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+        IN=$(find up/app/build/outputs/apk/izzy/release -name '*.apk' | head -1)
+        echo "$KS" | base64 -d > "$RUNNER_TEMP/ks.p12"
+        mkdir -p out
+        "$BT/zipalign" -f -p 4 "$IN" "$RUNNER_TEMP/aligned.apk"
+        "$BT/apksigner" sign --ks "$RUNNER_TEMP/ks.p12" --ks-pass env:KS_PASS --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASS \
+          --out out/Metrolist-Discover.apk "$RUNNER_TEMP/aligned.apk"
+        rm -f "$RUNNER_TEMP/ks.p12"
+        "$BT/apksigner" verify --print-certs out/Metrolist-Discover.apk | grep -i 'SHA-256'
+        VER=$("$BT/aapt2" dump badging out/Metrolist-Discover.apk | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)
+        "$BT/aapt2" dump badging out/Metrolist-Discover.apk | head -1
+        echo "apk=out/Metrolist-Discover.apk" >> "$GITHUB_OUTPUT"
+        echo "version=$VER" >> "$GITHUB_OUTPUT"

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Metrolist Discover (fork addition) -->
+<resources>
+    <string name="discover_title">Discover for you</string>
+    <string name="discover_subtitle">Learned on your phone from what you play</string>
+    <string name="discover_smart_radio">Smart radio</string>
+    <string name="discover_mixes">Your mixes</string>
+    <string name="discover_cold">Play about 20 songs and Discover will start learning your taste. Until then, the home feed below has you covered.</string>
+    <string name="discover_loading">Finding songs for you…</string>
+    <string name="discover_settings">Discover</string>
+    <string name="discover_bubble_toggle">Stats bubble when the app opens</string>
+    <string name="discover_reset">Reset learning</string>
+    <string name="discover_evaluate">Test on my history</string>
+    <string name="discover_counters">Discover songs played (30 days): %1$d · finished %2$d%% · liked %3$d%% · skipped %4$d%%</string>
+    <string name="discover_tuning">Self-tuning: %1$d updates · explore share %2$d%%</string>
+    <string name="discover_privacy">Everything is computed on this phone. Nothing about your listening leaves it.</string>
+    <string name="discover_eval_none">Needs at least 200 plays in your history.</string>
+    <string name="discover_eval_header">Hide the last 14 days, guess what you played (recall):</string>
+    <string name="discover_eval_new">New songs</string>
+    <string name="discover_eval_all">All songs</string>
+    <string name="discover_reason_forgotten">Forgotten favorite</string>
+    <string name="discover_reason_artist">New from an artist you love</string>
+    <string name="discover_reason_similar">Similar artist</string>
+    <string name="discover_reason_explore">Something new</string>
+    <string name="discover_reason_hour">Fits this hour</string>
+    <string name="discover_reason_because">Because you play %1$s</string>
+    <string name="discover_reason_for_you">For you</string>
+</resources>

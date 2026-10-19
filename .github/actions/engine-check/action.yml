@@ -1,0 +1,34 @@
+name: Engine tests + evaluator regression gate
+description: Compiles the pure-Kotlin engine with kotlinc (no Android), runs its JUnit tests and the synthetic holdout evaluator against the stored baseline
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@v4
+      with: {distribution: temurin, java-version: "21"}
+    - name: kotlinc + junit
+      shell: bash
+      run: |
+        KV=$(grep -m1 '^kotlin = ' up/gradle/libs.versions.toml 2>/dev/null | cut -d'"' -f2 || true)
+        KV=${KV:-2.4.10}
+        curl -sSL -o kc.zip "https://github.com/JetBrains/kotlin/releases/download/v$KV/kotlin-compiler-$KV.zip" || \
+          curl -sSL -o kc.zip "https://github.com/JetBrains/kotlin/releases/download/v2.4.10/kotlin-compiler-2.4.10.zip"
+        unzip -q kc.zip -d "$RUNNER_TEMP/k"
+        curl -sSL -o "$RUNNER_TEMP/junit.jar" https://repo1.maven.org/maven2/junit/junit/4.13.2/junit-4.13.2.jar
+        curl -sSL -o "$RUNNER_TEMP/hamcrest.jar" https://repo1.maven.org/maven2/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar
+    - name: Unit tests
+      shell: bash
+      run: |
+        K="$RUNNER_TEMP/k/kotlinc"
+        E=overlay/app/src/main/kotlin/com/metrolist/music/discover/engine
+        T=overlay/app/src/test/kotlin/com/metrolist/music/discover/engine
+        "$K/bin/kotlinc" -nowarn -cp "$RUNNER_TEMP/junit.jar" $E/*.kt $T/*.kt -d "$RUNNER_TEMP/tc"
+        cp -r overlay/app/src/test/resources/* "$RUNNER_TEMP/tc/"
+        java -cp "$RUNNER_TEMP/tc:$RUNNER_TEMP/junit.jar:$RUNNER_TEMP/hamcrest.jar:$K/lib/kotlin-stdlib.jar" org.junit.runner.JUnitCore \
+          $(ls $T | sed 's/\.kt$//; s/^/com.metrolist.music.discover.engine./')
+    - name: Synthetic holdout evaluation vs stored baseline (fails on regression)
+      shell: bash
+      run: |
+        K="$RUNNER_TEMP/k/kotlinc"
+        "$K/bin/kotlinc" -nowarn overlay/app/src/main/kotlin/com/metrolist/music/discover/engine/*.kt tools/eval-cli/EvalCli.kt -include-runtime -d "$RUNNER_TEMP/eval.jar"
+        java -cp "$RUNNER_TEMP/eval.jar" EvalCliKt --synthetic --baseline overlay/app/src/test/resources/discover/baseline.properties --check | tee eval-report.txt | tail -25
+        echo '### Synthetic holdout evaluation' >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"; tail -25 eval-report.txt >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"

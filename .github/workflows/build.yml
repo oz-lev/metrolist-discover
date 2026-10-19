@@ -1,0 +1,44 @@
+# Normal build on every push: engine tests + evaluator gate, then the full app build (unit tests + signed APK).
+name: Build
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  engine:
+    name: Engine tests + evaluator gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/engine-check
+  apk:
+    name: App build (upstream tag in UPSTREAM_TAG + overlay)
+    needs: engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upstream tag
+        id: tag
+        run: echo "tag=$(tr -d '[:space:]' < UPSTREAM_TAG)" >> "$GITHUB_OUTPUT"
+      - name: Build
+        id: apk
+        uses: ./.github/actions/build-apk
+        with:
+          upstream-tag: ${{ steps.tag.outputs.tag }}
+          keystore: ${{ secrets.KEYSTORE }}
+          keystore-password: ${{ secrets.KEYSTORE_PASSWORD }}
+          key-alias: ${{ secrets.KEY_ALIAS }}
+          key-password: ${{ secrets.KEY_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Metrolist-Discover-${{ steps.apk.outputs.version-name }}
+          path: ${{ steps.apk.outputs.apk }}
+          retention-days: 14
