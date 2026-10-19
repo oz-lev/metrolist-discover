@@ -282,4 +282,23 @@ class V21Test {
         assertNull(DjIntro.line("X", 3, ts(18, 0), ts(19, 0)))
         assertTrue(DailyPick.index(12345, 7) in 0..6)
     }
+
+    // ---------------------------------------------------------------- daily goal + jump back in (concepts from Duolingo / Spotify)
+    @Test fun dailyGoalStreakAndJumpBack() {
+        val tracks = (0 until 5).associate { "t$it" to track(it) }
+        val min = 60_000L
+        val plays = listOf(
+            PlayEvent("t0", ts(15, 12), 31 * min), PlayEvent("t1", ts(16, 12), 20 * min), PlayEvent("t2", ts(16, 13), 12 * min),
+            PlayEvent("t3", ts(17, 9), 10 * min), PlayEvent("t4", ts(17, 10), 25_000), PlayEvent("t1", ts(17, 11), 5 * min),
+        )
+        val h = History(tracks, plays)
+        val s17 = DailyGoal.compute(h, ts(17, 20), 30)
+        assertEquals(15, s17.minutesToday); assertFalse(s17.done); assertEquals(2, s17.streak)   // 15th and 16th reached 30
+        assertEquals(0.5f, s17.progress, 0.001f)
+        val s16 = DailyGoal.compute(h, ts(16, 20), 30)
+        assertTrue(s16.done); assertEquals(2, s16.streak)
+        assertEquals(0, DailyGoal.compute(h, ts(19, 20), 30).streak)                                // a missed day breaks it
+        val jb = JumpBack.recent(h, 10).map { it.id }
+        assertEquals(listOf("t1", "t3", "t2", "t0"), jb)                                         // newest first, distinct, no 25 s skip
+    }
 }

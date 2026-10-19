@@ -53,7 +53,12 @@ fun ProfileScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     val db = LocalDatabase.current
     var profile by remember { mutableStateOf<Achievements.Profile?>(null) }
-    LaunchedEffect(Unit) { profile = runCatching { V2Engine.profile(ctx, db) }.getOrNull() }
+    var goal by remember { mutableStateOf<com.metrolist.music.discover.engine.DailyGoal.State?>(null) }
+    LaunchedEffect(Unit) {
+        profile = runCatching { V2Engine.profile(ctx, db) }.getOrNull()
+        val g = com.metrolist.music.discover.v2.V2Settings.get(ctx).dailyGoalMin
+        if (g > 0) goal = runCatching { com.metrolist.music.discover.engine.DailyGoal.compute(V2Engine.history(ctx, db), V2Engine.now(), g) }.getOrNull()
+    }
     val p = profile
 
     V2Page(title = "הפרופיל שלי 🏆", subtitle = "רמות, רצפים והישגים מההאזנה שלך", onBack = onBack) {
@@ -62,6 +67,7 @@ fun ProfileScreen(onBack: () -> Unit) {
             return@V2Page
         }
         item(key = "level") { LevelCard(p) }
+        goal?.let { g -> item(key = "goal") { com.metrolist.music.discover.v21.ui.GoalFlameCard(g, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) } }
         item(key = "stats") {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
                 Stat("🔥", "${p.currentStreak}", "ימים ברצף", Modifier.weight(1f))

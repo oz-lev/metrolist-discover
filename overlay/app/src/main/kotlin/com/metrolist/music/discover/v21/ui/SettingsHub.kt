@@ -55,6 +55,8 @@ import com.metrolist.music.constants.DensityScaleKey
 import com.metrolist.music.constants.HideExplicitKey
 import com.metrolist.music.constants.SkipSilenceKey
 import com.metrolist.music.constants.SleepTimerFadeOutKey
+import com.metrolist.music.constants.SwipeThumbnailKey
+import com.metrolist.music.constants.SwipeToSongKey
 import com.metrolist.music.discover.DiscoverStore
 import com.metrolist.music.discover.engine.BlockKind
 import com.metrolist.music.discover.engine.BlockRule
@@ -138,6 +140,8 @@ fun SettingsHubScreen(onBack: () -> Unit, onNavigate: (String) -> Unit) {
     val (hideExplicit, setHideExplicit) = rememberPreference(HideExplicitKey, false)
     val (density, setDensity) = rememberPreference(DensityScaleKey, 1f)
     val (darkMode, setDarkMode) = rememberEnumPreference(DarkModeKey, DarkMode.AUTO)
+    val (swipeMini, setSwipeMini) = rememberPreference(SwipeThumbnailKey, true)
+    val (swipeSong, setSwipeSong) = rememberPreference(SwipeToSongKey, false)
 
     val items = buildList {
         // ------------------------------------------------ 🎨 design studio
@@ -158,6 +162,8 @@ fun SettingsHubScreen(onBack: () -> Unit, onNavigate: (String) -> Unit) {
         add(SItem(g0, "הבית החדש", "כבוי = הבית הקלאסי של Discover") { Toggle("🏠 הבית החדש", "כבוי = הבית הקלאסי של Discover", s.homeV2) { s.homeV2 = it } })
         add(SItem(g0, "כפתורי וייב וכלים בנגן", "עוד כזה / שנה וייב / אנרגיה ↑ + כלים") { Toggle("🔁 כפתורי וייב וכלים בנגן", "עוד כזה / שנה וייב / אנרגיה ↑, פאניקה, קריוקי, לולאה…", s.vibeBar) { s.vibeBar = it } })
         add(SItem(g0, "פס צבעים חי בנגן", "אנימציה בצבעי העטיפה") { Toggle("🌈 פס צבעים חי בנגן", "בצבעי העטיפה, קופץ לפי האנרגיה", s.animatedArt) { s.animatedArt = it } })
+        add(SItem(g0, "החלקה על הנגן להחלפת שיר", "כמו ב-YouTube Music: החלק את העטיפה ימינה/שמאלה") { Toggle("👆 החלקה להחלפת שיר", "על הנגן המיני והעטיפה הגדולה (של Metrolist)", swipeMini) { setSwipeMini(it) } })
+        add(SItem(g0, "החלקה על שיר ברשימה", "החלק שיר ברשימה כדי להוסיף אותו לתור") { Toggle("↔️ החלקה על שיר ברשימה", "מוסיף לתור בהחלקה (של Metrolist)", swipeSong) { setSwipeSong(it) } })
         add(SItem(g0, "איך לקרוא לך", "השם בברכה בבית") {
             var name by remember(version) { mutableStateOf(s.greetingName) }
             OutlinedTextField(value = name, onValueChange = { name = it; s.greetingName = it }, singleLine = true,
@@ -321,6 +327,10 @@ fun SettingsHubScreen(onBack: () -> Unit, onNavigate: (String) -> Unit) {
             Choice("🫧 בועת נתונים", BubbleFreq.entries.map { it to it.he }, s.bubbleFreq) { s.bubbleFreq = it; DiscoverStore.get(ctx).put(DiscoverStore.K_BUBBLE, (it != BubbleFreq.NEVER).toString()) }
         })
         add(SItem(g8, "אתגר יומי", "אמן חדש כל יום, עם רצף והישג") { Toggle("🎯 אתגר יומי בבית", "\"היום: תשמע אמן אחד שלא שמעת אף פעם\"", s.challengeOnHome) { s.challengeOnHome = it } })
+        add(SItem(g8, "יעד האזנה יומי", "להבה ורצף בסגנון דואולינגו") {
+            SettingSlider("🔥 יעד האזנה יומי", s.dailyGoalMin.toFloat(), 0f..120f, 11, { if (it < 5f) "כבוי" else "${it.roundToInt()} דק׳" }, "כבוי", "120 דק׳") { s.dailyGoalMin = it.roundToInt() }
+        })
+        add(SItem(g8, "קפוץ בחזרה", "מדף השירים האחרונים בבית (כמו בספוטיפיי)") { Toggle("⏪ מדף \"קפוץ בחזרה\"", "השירים האחרונים ששמעת, בלחיצה אחת", s.jumpBack) { s.jumpBack = it } })
         add(SItem(g8, "הערות DJ", "\"הנה משהו שלא שמעת מזמן\" כשהשיר מתחיל") { Toggle("🎧 הערות DJ", "הודעה קטנה כשמתחיל שיר מיוחד (רעיון מה-DJ של ספוטיפיי)", s.djIntros) { s.djIntros = it } })
         add(SItem(g8, "מיקס לילה אופליין", "בלילה, בטעינה וב-Wi-Fi המיקס היומי יורד לבד") { Toggle("📥 מיקס לילה אופליין", "25 שירים יורדים בלילה, בטעינה וב-Wi-Fi", s.offlineMix) { s.offlineMix = it; V2Offline.schedule(ctx) } })
         add(SItem(g8, "רולטה", "שיר אקראי לגמרי מכל YouTube Music") {

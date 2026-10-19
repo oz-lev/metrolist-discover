@@ -64,6 +64,8 @@ fun V21HomeExtras(run: (String, suspend () -> BuiltMix) -> Unit) {
     val s = remember(version) { V2Settings.get(ctx) }
     var ask by remember { mutableStateOf("") }
     var challenge by remember { mutableStateOf<DailyChallenge.State?>(null) }
+    var goal by remember { mutableStateOf<com.metrolist.music.discover.engine.DailyGoal.State?>(null) }
+    var recent by remember { mutableStateOf<List<com.metrolist.music.discover.engine.TrackMeta>>(emptyList()) }
     val tap = rememberTap()
 
     // home-screen widget buttons arrive here
@@ -78,7 +80,12 @@ fun V21HomeExtras(run: (String, suspend () -> BuiltMix) -> Unit) {
             "car" -> runCatching { nav.navigate(V2Routes.CAR) }
         }
     }
-    LaunchedEffect(version) { if (s.challengeOnHome) challenge = runCatching { DailyChallenge.compute(V2Engine.history(ctx, db), V2Engine.now()) }.getOrNull() }
+    LaunchedEffect(version) {
+        val h = runCatching { V2Engine.history(ctx, db) }.getOrNull() ?: return@LaunchedEffect
+        if (s.challengeOnHome) challenge = DailyChallenge.compute(h, V2Engine.now())
+        goal = if (s.dailyGoalMin > 0) com.metrolist.music.discover.engine.DailyGoal.compute(h, V2Engine.now(), s.dailyGoalMin) else null
+        recent = if (s.jumpBack) com.metrolist.music.discover.engine.JumpBack.recent(h, 12) else emptyList()
+    }
 
     Column(Modifier.fillMaxWidth()) {
         // ask music (YouTube Music idea)
@@ -100,6 +107,12 @@ fun V21HomeExtras(run: (String, suspend () -> BuiltMix) -> Unit) {
             com.metrolist.music.discover.v2.ui.Pill("🗣️ בנה לי מיקס מזה", selected = true) { val q = ask.trim(); run("🗣️ $q…") { V2Engine.ask(ctx, db, q) } }
         }
 
+        // Spotify-style "jump back in"
+        JumpBackShelf(recent) { i -> pc.playTracks(recent, "⏪ קפוץ בחזרה", i) }
+
+        // Duolingo-style daily goal
+        goal?.let { GoalFlameCard(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) { nav.navigate(V2Routes.PROFILE) } }
+
         // daily challenge
         val c = challenge
         if (s.challengeOnHome && c != null) {
@@ -115,6 +128,9 @@ fun V21HomeExtras(run: (String, suspend () -> BuiltMix) -> Unit) {
             }
         }
 
+        // Shazam-style recognise button (opens Metrolist's own recognition screen)
+        PulsingRecognizeButton { runCatching { nav.navigate("recognition") } }
+
         // toolbox
         Text("ארגז הכלים 🧰", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(start = 16.dp, top = 14.dp, bottom = 4.dp))
         val tools = listOf(
@@ -129,7 +145,6 @@ fun V21HomeExtras(run: (String, suspend () -> BuiltMix) -> Unit) {
             Tool("🗂️", "התורים שלי", 0xFF6366F1, 0xFF312E81) { nav.navigate(V2Routes.QUEUES) },
             Tool("🎨", "עיצוב", 0xFFEC4899, 0xFF22D3EE) { nav.navigate(V2Routes.THEME) },
             Tool("👥", "פרופילים", 0xFF94A3B8, 0xFF334155) { nav.navigate(V2Routes.PROFILES) },
-            Tool("🎵", "זיהוי שיר", 0xFF22C55E, 0xFF0EA5E9) { runCatching { nav.navigate("recognition") } },
         )
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(tools.size) { i ->

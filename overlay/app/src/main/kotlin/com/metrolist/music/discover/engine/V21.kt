@@ -570,3 +570,41 @@ object TasteStats {
 object DailyPick {
     fun index(dayKey: Long, count: Int): Int = if (count <= 0) 0 else (abs(dayKey * 2_654_435_761L) % count).toInt()
 }
+
+
+/** Duolingo-style daily listening goal: minutes today (plays of 30 s or more) + a streak of days that reached the goal. */
+object DailyGoal {
+    data class State(val minutesToday: Int, val goal: Int, val done: Boolean, val streak: Int) {
+        val progress: Float get() = if (goal <= 0) 0f else (minutesToday.toFloat() / goal).coerceIn(0f, 1f)
+    }
+
+    fun minutesByDay(h: History): Map<java.time.LocalDate, Int> {
+        val ms = HashMap<java.time.LocalDate, Long>()
+        for (p in h.plays) if (p.playedMs >= 30_000L) { val d = DayClock.date(p.timestampMs); ms[d] = (ms[d] ?: 0L) + p.playedMs }
+        return ms.mapValues { (it.value / 60_000L).toInt() }
+    }
+
+    fun compute(h: History, nowTs: Long, goal: Int): State {
+        val byDay = minutesByDay(h)
+        val today = DayClock.date(nowTs)
+        val m = byDay[today] ?: 0
+        val g = goal.coerceAtLeast(1)
+        var d = if (m >= g) today else today.minusDays(1)
+        var streak = 0
+        while ((byDay[d] ?: 0) >= g && streak < 3650) { streak++; d = d.minusDays(1) }
+        return State(m, goal, goal > 0 && m >= g, streak)
+    }
+}
+
+/** Spotify-style "jump back in": the most recently played distinct songs (30 s or more), newest first. */
+object JumpBack {
+    fun recent(h: History, n: Int = 12): List<TrackMeta> {
+        val seen = HashSet<String>(); val out = ArrayList<TrackMeta>()
+        for (p in h.plays.sortedByDescending { it.timestampMs }) {
+            if (p.playedMs < 30_000L || !seen.add(p.trackId)) continue
+            h.tracks[p.trackId]?.let { out += it }
+            if (out.size >= n) break
+        }
+        return out
+    }
+}

@@ -109,6 +109,9 @@ class V2Settings private constructor(private val store: DiscoverStore) {
     var djIntros: Boolean get() = b("v21.djIntros", false); set(v) = save("v21.djIntros", v)
     var bubbleFreq: BubbleFreq get() = store.get("v21.bubbleFreq")?.let { n -> BubbleFreq.entries.firstOrNull { it.name == n } } ?: BubbleFreq.EVERY_OPEN; set(v) = save("v21.bubbleFreq", v.name)
     var challengeOnHome: Boolean get() = b("v21.challenge", true); set(v) = save("v21.challenge", v)
+    /** Duolingo-style daily listening goal in minutes (0 = off). */
+    var dailyGoalMin: Int get() = i("v21.goal", 30); set(v) = save("v21.goal", v.coerceIn(0, 240))
+    var jumpBack: Boolean get() = b("v21.jumpBack", true); set(v) = save("v21.jumpBack", v)
     var blendName: String get() = store.get("v21.blendName").orEmpty(); set(v) = save("v21.blendName", v.take(24))
     // global (all profiles): the auto-switch schedule
     var autoSwitch: Boolean get() = store.rawGet("g.autoSwitch")?.toBooleanStrictOrNull() ?: false; set(v) { store.rawPut("g.autoSwitch", v.toString()); bump() }
@@ -145,7 +148,7 @@ class V2Settings private constructor(private val store: DiscoverStore) {
             "v21.accent", "v21.round", "v21.font", "v21.fontScale", "v21.randomTheme", "v21.navGlow", "v21.miniGlow", "v21.haptics", "v21.motion", "v21.gradHeaders",
             "v21.seedLock", "v21.seed", "v21.weekday", "v21.defaultMood", "v21.daylist", "v21.ramp", "v21.favEvery", "v21.neverHeard",
             "v21.maxLen", "v21.artistGap", "v21.lang", "v21.explicit", "v21.autoEq", "v21.autoEqK", "v21.flow", "v21.sleepFade",
-            "v21.smartEvery", "v21.secret", "v21.autoLike", "v21.autoLikeN", "v21.djIntros", "v21.bubbleFreq", "v21.challenge").forEach { store.put(it, null) }
+            "v21.smartEvery", "v21.secret", "v21.autoLike", "v21.autoLikeN", "v21.djIntros", "v21.bubbleFreq", "v21.challenge", "v21.goal", "v21.jumpBack").forEach { store.put(it, null) }
         _version.value = _version.value + 1
     }
 
