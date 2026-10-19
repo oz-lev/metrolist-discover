@@ -1,0 +1,54 @@
+# One-off / on-demand privacy audit of the WHOLE git history (all refs) before making the repo public.
+name: History audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Fetch all refs
+        run: git fetch --quiet origin '+refs/*:refs/remotes/all/*' || true
+      - name: Audit
+        env:
+          S1: ${{ secrets.KEYSTORE_PASSWORD }}
+          S2: ${{ secrets.KEY_PASSWORD }}
+          S3: ${{ secrets.DL_KEY }}
+          S4: ${{ secrets.KEYSTORE }}
+          MARKERS: ${{ secrets.OZ_MARKERS }}
+        run: |
+          set -u
+          REVS=$(git rev-list --all)
+          echo "::notice title=refs::$(git for-each-ref --format='%(refname)' | tr '\n' ' ')"
+          echo "::notice title=commits::$(echo "$REVS" | wc -l) commits"
+          PATHS=$(git log --all --name-only --pretty=format: | sort -u | sed '/^$/d')
+          echo "::notice title=paths ever committed::$(echo "$PATHS" | tr '\n' ' ')"
+          BAD=0
+          # every blob ever: binary / sqlite / zip / pkcs12 / big
+          for b in $(git rev-list --all --objects | awk '{print $1}' | git cat-file --batch-check='%(objecttype) %(objectname) %(objectsize)' | awk '$1=="blob"{print $2}'); do
+            if git cat-file -p "$b" | head -c 65536 | grep -qP '\x00'; then echo "::error::binary blob $b"; BAD=1; fi
+            if git cat-file -p "$b" | head -c 16 | grep -q 'SQLite format 3'; then echo "::error::sqlite blob $b"; BAD=1; fi
+            if [ "$(git cat-file -p "$b" | head -c 2)" = "PK" ]; then echo "::error::zip blob $b"; BAD=1; fi
+            SZ=$(git cat-file -s "$b"); if [ "$SZ" -gt 300000 ]; then echo "::error::big blob $b ($SZ bytes)"; BAD=1; fi
+          done
+          # secret values anywhere in history
+          for v in "$S1" "$S2" "$S3" "${S4:0:40}"; do
+            [ -n "$v" ] || continue
+            if git grep -F -q -e "$v" $REVS -- 2>/dev/null; then echo "::error::a secret value appears in history"; BAD=1; fi
+          done
+          # personal-data markers (song titles/ids from the owner's backup, kept as a secret)
+          HITS=0
+          while IFS= read -r m; do
+            [ -n "$m" ] || continue
+            if git grep -F -q -e "$m" $REVS -- 2>/dev/null; then HITS=$((HITS+1)); fi
+          done <<< "$MARKERS"
+          echo "::notice title=personal markers::$(echo "$MARKERS" | sed '/^$/d' | wc -l) markers checked, $HITS found in history"
+          [ "$HITS" -eq 0 ] || BAD=1
+          # generic secret scanners
+          grep -rIlE -- '-----BEGIN (RSA |EC |OPENSSH |)PRIV""ATE KEY-----|gh""p_[A-Za-z0-9]{30,}|github""_pat_|AK""IA[0-9A-Z]{16}|STORE_PASSWORD=|KEY_PASSWORD=' $(git ls-files) && { echo "::error::secret-looking string in HEAD"; BAD=1; } || true
+          for r in $REVS; do git grep -IlE -e '-----BEGIN (RSA |EC |OPENSSH |)PRIV""ATE KEY-----' -e 'gh""p_[A-Za-z0-9]{30,}' -e 'github""_pat_' -e 'STORE_PASSWORD=[^$ ]' "$r" -- 2>/dev/null; done | sort -u > hits.txt
+          if [ -s hits.txt ]; then echo "::error::secret-looking strings in history: $(tr '\n' ' ' < hits.txt)"; BAD=1; fi
+          if [ "$BAD" -eq 0 ]; then echo "::notice title=AUDIT RESULT::CLEAN"; else echo "::error title=AUDIT RESULT::NOT CLEAN"; exit 1; fi
