@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Metrolist Discover v2 (fork addition, GPL-3.0). Merged into release builds only; adds NO permission.
+<!-- Metrolist Discover v2 (fork addition, GPL-3.0). Merged into release builds only; adds NO permission (services and receivers are not permissions).
      The overnight offline mix job (platform JobScheduler; BIND_JOB_SERVICE is the system's guard on the service, not an app permission). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
@@ -7,5 +7,28 @@
             android:name="com.metrolist.music.discover.v2.V2OfflineJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- v2.1 home-screen widgets (receivers are not permissions) -->
+        <receiver
+            android:name="com.metrolist.music.discover.v21.DiscoverWidget"
+            android:exported="true"
+            android:label="Discover · נגן">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/discover_widget_player_info" />
+        </receiver>
+        <receiver
+            android:name="com.metrolist.music.discover.v21.DailyMixWidget"
+            android:exported="true"
+            android:label="Discover · המיקס היומי">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/discover_widget_daily_info" />
+        </receiver>
     </application>
 </manifest>

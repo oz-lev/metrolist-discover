@@ -17,6 +17,14 @@ import com.metrolist.music.discover.DiscoverHooks
 import com.metrolist.music.discover.DiscoverRepository
 import com.metrolist.music.discover.DiscoverStore
 import com.metrolist.music.discover.engine.Achievements
+import com.metrolist.music.discover.engine.AskMusic
+import com.metrolist.music.discover.engine.Blend
+import com.metrolist.music.discover.engine.DailyPlan
+import com.metrolist.music.discover.engine.MixShaping
+import com.metrolist.music.discover.engine.SeedLock
+import com.metrolist.music.discover.engine.ShapeOptions
+import com.metrolist.music.discover.engine.TasteFile
+import com.metrolist.music.discover.engine.VibeTag
 import com.metrolist.music.discover.engine.ColorBuckets
 import com.metrolist.music.discover.engine.DayClock
 import com.metrolist.music.discover.engine.DayLock
@@ -57,7 +65,12 @@ data class BuiltMix(val title: String, val tracks: List<TrackMeta>, val target: 
  */
 object V2Engine {
     private val random = Random(System.nanoTime())
-    private val mixer = VibeMixer(random)
+    private val defaultMixer = VibeMixer(random)
+    /** v2.1 "random seed lock": a seeded mixer gives the same mix all day for the same seed. */
+    private fun mixer(ctx: Context): VibeMixer {
+        val s = V2Settings.get(ctx)
+        return if (s.seedLock) VibeMixer(SeedLock.random(true, s.seed, DayClock.dayKey(now()))) else defaultMixer
+    }
     @Volatile private var est: VibeEstimator? = null
     @Volatile private var snap: Snapshot? = null
     private val onlineCache = HashMap<String, Pair<Long, List<TrackMeta>>>()
@@ -164,7 +177,7 @@ object V2Engine {
         return RuleEngine(set.rules(), lock)
     }
 
-    private fun finish(ctx: Context, s: Snapshot, list: List<PoolTrack>, title: String, target: VibeTarget?, note: String? = null): BuiltMix {
+    private fun finish(ctx: Context, s: Snapshot, list: List<PoolTrack>, title: String, target: VibeTarget?, note: String? = null, keepOrder: Boolean = false): BuiltMix {
         val set = V2Settings.get(ctx)
         var out = ruleEngine(ctx, s).filter(list, now())
         if (set.surpriseEvery5 && out.size >= 5) {
@@ -176,26 +189,48 @@ object V2Engine {
             while (i < m.size && w < wild.size) { m.add(i, wild[w++]); i += 5 }
             out = ruleEngine(ctx, s).filter(m, now())
         }
+        out = shape(ctx, s, out, keepOrder)
         val tracks = out.map { it.track }
         if (target != null) activeMix = target to tracks.map { it.id }.toSet()
         return BuiltMix(title, tracks, target, note)
     }
 
+    // ------------------------------------------------------------------ v2.1 shaping (language, length, never-heard, favourite artist, artist gap, morning ramp)
+    fun heardIds(s: Snapshot): Set<String> = s.history.plays.asSequence().filter { it.playedMs >= 30_000L }.map { it.trackId }.toHashSet()
+
+    fun favoriteArtists(s: Snapshot, n: Int = 5): Set<String> {
+        val per = HashMap<String, Int>()
+        for (p in s.history.plays) if (p.playedMs >= 30_000L) s.history.tracks[p.trackId]?.let { per[it.mainArtist] = (per[it.mainArtist] ?: 0) + 1 }
+        return per.entries.sortedByDescending { it.value }.take(n).map { it.key }.toSet()
+    }
+
+    fun shape(ctx: Context, s: Snapshot, list: List<PoolTrack>, keepOrder: Boolean = false): List<PoolTrack> {
+        val set = V2Settings.get(ctx)
+        val o = set.shape().let { if (keepOrder) it.copy(artistGap = 0, morningRamp = false, favoriteEvery = 0) else it }
+        if (o == ShapeOptions()) return list
+        val fav = if (o.favoriteEvery > 0) favoriteArtists(s) else emptySet()
+        val favTracks = if (fav.isEmpty()) emptyList() else s.pool.filter { it.track.mainArtist in fav }.sortedByDescending { it.affinity }.take(60).shuffled(random)
+        val heard = if (o.neverHeard) heardIds(s) else emptySet()
+        return MixShaping.apply(list, o, heard, favTracks, fav, DayClock.dateTime(now()).hour)
+    }
+
+    fun resetLearning(ctx: Context) { est = null; snap = null; activeMix = null }
+
     // ------------------------------------------------------------------ mixes
     suspend fun mood(ctx: Context, db: MusicDatabase, preset: MoodPreset?, sliders: Sliders = Sliders(), size: Int = 30): BuiltMix = withContext(Dispatchers.Default) {
         val s = snapshot(ctx, db)
         val pool = withOnline(ctx, s, preset, sliders.familiarNew)
-        val t = mixer.target(preset, sliders)
+        val t = mixer(ctx).target(preset, sliders)
         val title = preset?.let { "${it.emoji} ${it.he}" } ?: "🎛️ המיקס שלך"
-        finish(ctx, s, mixer.build(pool, t, size + 10, sliders.familiarNew), title, t)
+        finish(ctx, s, mixer(ctx).build(pool, t, size + 10, sliders.familiarNew), title, t)
     }
 
     suspend fun moodFlip(ctx: Context, db: MusicDatabase): BuiltMix = withContext(Dispatchers.Default) {
         val s = snapshot(ctx, db)
         val pool = withOnline(ctx, s, MoodPreset.SAD, 0.5) + withOnline(ctx, s, MoodPreset.PARTY, 0.5).filter { it.familiarity == 0.0 }
-        val mix = mixer.moodFlip(pool.distinctBy { it.track.id }, 22)
+        val mix = mixer(ctx).moodFlip(pool.distinctBy { it.track.id }, 22)
         // keep the flip order: rules may drop songs but never reorder
-        finish(ctx, s, mix, "🔄 רגש להיפך", null, "מתחיל בעצוב ונגמר במסיבה")
+        finish(ctx, s, mix, "🔄 רגש להיפך", null, "מתחיל בעצוב ונגמר במסיבה", keepOrder = true)
     }
 
     suspend fun trip(ctx: Context, db: MusicDatabase, minutes: Int): BuiltMix = withContext(Dispatchers.Default) {
@@ -203,7 +238,7 @@ object V2Engine {
         val pool = withOnline(ctx, s, MoodPreset.DRIVE, 0.6)
         val rules = ruleEngine(ctx, s)
         val allowed = pool.filter { rules.violation(it.track, it.vibe, now()) == null }
-        val mix = mixer.tripLength(RuleEngine.capMizrahi(allowed, V2Settings.get(ctx).maxMizrahiPct), minutes)
+        val mix = mixer(ctx).tripLength(RuleEngine.capMizrahi(allowed, V2Settings.get(ctx).maxMizrahiPct), minutes)
         val total = mix.sumOf { it.track.durationSec }
         activeMix = MoodPreset.DRIVE.target to mix.map { it.track.id }.toSet()
         BuiltMix("🚗 נסיעה של $minutes דק׳", mix.map { it.track }, MoodPreset.DRIVE.target,
@@ -213,17 +248,19 @@ object V2Engine {
     suspend fun drama(ctx: Context, db: MusicDatabase): BuiltMix = withContext(Dispatchers.Default) {
         val s = snapshot(ctx, db)
         val pool = withOnline(ctx, s, MoodPreset.DRAMA, 0.4)
-        finish(ctx, s, mixer.drama(pool, 20), "🎬 מצב דרמה", MoodPreset.DRAMA.target, "פסקול לחיים שלך עכשיו")
+        finish(ctx, s, mixer(ctx).drama(pool, 20), "🎬 מצב דרמה", MoodPreset.DRAMA.target, "פסקול לחיים שלך עכשיו")
     }
 
     suspend fun daily(ctx: Context, db: MusicDatabase): BuiltMix = withContext(Dispatchers.Default) {
-        val taste = V2Settings.get(ctx).activeTaste()
+        val set = V2Settings.get(ctx)
+        val taste = set.activeTaste()
         if (taste != null) return@withContext tasteMix(ctx, db, taste, minutes = 60)
-        val hour = DayClock.dateTime(now()).hour
-        val preset = when (hour) { in 5..10 -> MoodPreset.WAKE_UP; in 11..16 -> MoodPreset.DRIVE; in 17..21 -> MoodPreset.PARTY; else -> MoodPreset.NIGHT }
+        val dt = DayClock.dateTime(now())
+        val preset = DailyPlan.presetFor(dt.dayOfWeek.value, dt.hour, set.weekdayMoods, set.defaultMood)
         val s = snapshot(ctx, db)
-        val t = mixer.target(preset, Sliders(familiarNew = 0.65)).copy(tags = emptySet())
-        finish(ctx, s, mixer.build(s.pool, t, 35, 0.65), "המיקס היומי שלך", t)
+        val t = mixer(ctx).target(preset, Sliders(familiarNew = 0.65)).copy(tags = emptySet())
+        val title = if (set.daylist) DailyPlan.daylistTitle(dt.dayOfWeek.value, dt.hour, preset) else "המיקס היומי שלך"
+        finish(ctx, s, mixer(ctx).build(s.pool, t, 35, 0.65), title, t)
     }
 
     suspend fun reshape(ctx: Context, db: MusicDatabase, current: TrackMeta, action: VibeAction): BuiltMix = withContext(Dispatchers.Default) {
@@ -232,7 +269,7 @@ object V2Engine {
         val relIds = rel.map { it.id }.toSet()
         val pool = s.pool + rel.filter { it.id !in s.byId }.map { poolTrack(ctx, it, s) }
         val cur = poolTrack(ctx, current, s)
-        val out = mixer.reshape(cur, pool, action, 20, relIds)
+        val out = mixer(ctx).reshape(cur, pool, action, 20, relIds)
         val title = when (action) { VibeAction.MORE_LIKE_THIS -> "עוד כזה"; VibeAction.CHANGE_VIBE -> "וייב חדש"; VibeAction.ENERGY_UP -> "אנרגיה ↑" }
         val target = when (action) {
             VibeAction.MORE_LIKE_THIS -> VibeTarget(cur.vibe.energy, cur.vibe.valence, cur.vibe.mizrahi)
@@ -249,7 +286,7 @@ object V2Engine {
         val found = searchMany(seeds, 25).map { poolTrack(ctx, it, s).copy(familiarity = 0.0) }
         val rules = ruleEngine(ctx, s)
         val allowed = found.filter { rules.violation(it.track, it.vibe, now()) == null }
-        val ordered = mixer.tripLength(allowed, minutes, preset.target).ifEmpty { mixer.build(allowed, preset.target, 20) }
+        val ordered = mixer(ctx).tripLength(allowed, minutes, preset.target).ifEmpty { mixer(ctx).build(allowed, preset.target, 20) }
         activeMix = null
         BuiltMix("${preset.emoji} הטעם של: ${preset.he}", ordered.map { it.track }, null, "שעה של טעם של מישהו אחר")
     }
@@ -305,6 +342,91 @@ object V2Engine {
                 0.15 * (1.0 - f.skipPenalty.coerceIn(0.0, 1.0))
             id to (62 + (score * 37).toInt()).coerceIn(60, 99)
         }.toMap()
+    }
+
+    // ------------------------------------------------------------------ v2.1 functions
+    /** Panic button: instantly calm music, built only from the local pool (no network wait). */
+    suspend fun panic(ctx: Context, db: MusicDatabase): BuiltMix = withContext(Dispatchers.Default) {
+        val s = snapshot(ctx, db)
+        val t = VibeTarget(energy = 0.2, valence = 0.55, tags = setOf(VibeTag.CHILL))
+        val calm = s.pool.filter { it.vibe.energy <= 0.45 }
+        finish(ctx, s, mixer(ctx).build(calm.ifEmpty { s.pool }, t, 25, 0.8), "🧯 כפתור פאניקה", t, "רגוע. נושמים.")
+    }
+
+    /** Decade dial: the decade's hits from YouTube Music search, shaped by your taste. */
+    suspend fun decade(ctx: Context, db: MusicDatabase, decade: Int): BuiltMix = withContext(Dispatchers.Default) {
+        val s = snapshot(ctx, db)
+        val yy = decade % 100
+        val heb = if (decade >= 2000) "שנות ה-${decade}" else "שנות ה-${"%02d".format(yy)}"
+        val seeds = listOf("${decade}s hits", "להיטים ישראליים $heb", "best of ${decade}s", "מזרחית $heb")
+        val found = searchMany(seeds, 25).map { poolTrack(ctx, it, s) }
+        finish(ctx, s, mixer(ctx).diversify(found.shuffled(random), 30), "📻 עשור: $heb", null, "חוגת העשורים")
+    }
+
+    /** "Ask music": free text -> vibe target (+ trip length), from the local pool plus a search for the words themselves. */
+    suspend fun ask(ctx: Context, db: MusicDatabase, text: String): BuiltMix = withContext(Dispatchers.Default) {
+        val q = AskMusic.parse(text)
+        val s = snapshot(ctx, db)
+        val online = runCatching { searchMany(listOfNotNull(text.trim().takeIf { it.isNotEmpty() }) + (q.preset?.let { presetSeeds[it].orEmpty() } ?: emptyList()), 20) }.getOrDefault(emptyList())
+        val pool = s.pool + online.filter { it.id !in s.byId }.map { poolTrack(ctx, it, s) }
+        val label = if (q.matched.isEmpty()) "🗣️ \"${text.take(24)}\"" else "🗣️ " + q.matched.joinToString(" · ")
+        if (q.minutes != null) {
+            val rules = ruleEngine(ctx, s)
+            val ok = pool.filter { rules.violation(it.track, it.vibe, now()) == null }
+            val mix = mixer(ctx).tripLength(ok, q.minutes, q.target)
+            activeMix = q.target to mix.map { it.track.id }.toSet()
+            return@withContext BuiltMix(label, mix.map { it.track }, q.target, "${q.minutes} דקות")
+        }
+        finish(ctx, s, mixer(ctx).build(pool, q.target, 30, 0.5), label, q.target, if (q.matched.isEmpty()) "לא זיהיתי מילים, חיפשתי את הטקסט" else null)
+    }
+
+    /** Recommendations for Smart Shuffle / Flow / samples: unknown-to-you songs that fit your taste. */
+    suspend fun recs(ctx: Context, db: MusicDatabase, n: Int, exclude: Set<String> = emptySet()): List<TrackMeta> = withContext(Dispatchers.Default) {
+        val s = snapshot(ctx, db)
+        val fromDiscover = runCatching { DiscoverRepository(ctx.applicationContext, db).cached().map { it.track } }.getOrDefault(emptyList())
+        val pool = (fromDiscover.map { poolTrack(ctx, it, s) } + s.pool.filter { it.familiarity < 0.2 })
+            .filter { it.track.id !in exclude }.distinctBy { it.track.id }
+        val rules = ruleEngine(ctx, s)
+        shape(ctx, s, pool.filter { rules.violation(it.track, it.vibe, now()) == null }.sortedByDescending { it.affinity }.take(n * 3).shuffled(random))
+            .take(n).map { it.track }
+    }
+
+    /** Flow: the next chunk of an endless personal stream (daily-mix logic, never repeating what is queued). */
+    suspend fun flowMore(ctx: Context, db: MusicDatabase, queued: Set<String>): List<TrackMeta> = withContext(Dispatchers.Default) {
+        val s = snapshot(ctx, db)
+        val dt = DayClock.dateTime(now())
+        val set = V2Settings.get(ctx)
+        val preset = DailyPlan.presetFor(dt.dayOfWeek.value, dt.hour, set.weekdayMoods, set.defaultMood)
+        val t = mixer(ctx).target(preset, Sliders(familiarNew = 0.55))
+        finish(ctx, s, mixer(ctx).build(s.pool.filter { it.track.id !in queued }, t, 15, 0.55), "Flow", t).tracks
+    }
+
+    suspend fun history(ctx: Context, db: MusicDatabase): History = snapshot(ctx, db).history
+
+    data class PlayInfo(val plays: Int, val lastTs: Long?, val fullListens: Int)
+
+    /** Cheap per-song facts for the service (DJ intros, never-heard guard, auto-like); null until the pool is built. */
+    fun playInfo(songId: String): PlayInfo? {
+        val s = snap ?: return null
+        var plays = 0; var last: Long? = null; var full = 0
+        for (p in s.history.plays) if (p.trackId == songId && p.playedMs >= 30_000L) {
+            plays++; if (last == null || p.timestampMs > last) last = p.timestampMs
+            val d = s.history.duration(p); if (d > 0 && p.playedMs >= d * 0.85) full++
+        }
+        return PlayInfo(plays, last, full)
+    }
+
+    suspend fun blendMine(ctx: Context, db: MusicDatabase, name: String): TasteFile = withContext(Dispatchers.Default) {
+        Blend.export(snapshot(ctx, db).history, name, now())
+    }
+
+    suspend fun blendMix(ctx: Context, db: MusicDatabase, friend: TasteFile, myName: String): BuiltMix = withContext(Dispatchers.Default) {
+        val mine = blendMine(ctx, db, myName)
+        val merged = Blend.merge(mine, friend, 40)
+        val s = snapshot(ctx, db)
+        val rules = ruleEngine(ctx, s)
+        val ok = merged.map { poolTrack(ctx, it, s) }.filter { rules.violation(it.track, it.vibe, now()) == null }
+        BuiltMix("🤝 Blend: ${mine.name} + ${friend.name}", ok.map { it.track }, null, "התאמה של ${Blend.matchPct(mine, friend)}%")
     }
 
     // ------------------------------------------------------------------ colour search

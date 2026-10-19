@@ -156,7 +156,7 @@ fun SearchLabScreen(onBack: () -> Unit, onRecognize: () -> Unit) {
                     Column(Modifier.padding(horizontal = 16.dp)) {
                         Text("🎨 $have עטיפות נסרקו", fontWeight = FontWeight.SemiBold)
                         if (scanTotal > 0 && scanDone < scanTotal) LinearProgressIndicator(progress = { scanDone.toFloat() / scanTotal }, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
-                        GradientButton("סרוק את העטיפות שלי", Modifier.fillMaxWidth().padding(vertical = 8.dp), brush = V2Colors.cool) {
+                        GradientButton("סרוק את העטיפות שלי", Modifier.fillMaxWidth().padding(vertical = 8.dp), brush = themeCool()) {
                             show("סורק עטיפות…") {
                                 V2Engine.scanColors(ctx, db, 300) { d, t -> scanDone = d; scanTotal = t }
                                 scanDone = scanTotal + 1

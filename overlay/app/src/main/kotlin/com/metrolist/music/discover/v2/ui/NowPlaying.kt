@@ -124,6 +124,7 @@ fun NowPlayingVibeBar() {
                         ) { Text(if (sel) "…" else label, color = Color.White, fontWeight = FontWeight.SemiBold) }
                     }
                 }
+                com.metrolist.music.discover.v21.ui.NowPlayingTools()
             }
         }
     }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inserts the Metrolist-Discover hooks (6 of them, see README-OZ.md) into an upstream Metrolist checkout (GPL-3.0).
+"""Inserts the Metrolist-Discover hooks (9 of them, see README-OZ.md) into an upstream Metrolist checkout (GPL-3.0).
 
 Anchor based instead of line-number patches, so upstream edits around the hooks don't break it.
 Idempotent (a hook already present is left alone). Exits 3 with a clear message when an anchor
@@ -98,12 +98,43 @@ def service(src):
     line = f"\n{n.group(1)}runCatching {{ com.metrolist.music.discover.v2.V2Service.attach(this) }} // {MARK} service"
     return src[:n.end()] + line + src[n.end():]
 
+# Hook 7 (v2.1) - ui/theme/Theme.kt: the design system. The final MaterialTheme(...) inside MetrolistTheme becomes
+# DiscoverTheme(...), which re-themes the WHOLE app (colours, Hebrew font, shapes, motion) from the Discover settings.
+def theme(src):
+    m = re.search(r"fun MetrolistTheme\(", src)
+    if not m: return None
+    pat = re.compile(r"MaterialTheme\(\s*colorScheme = colorScheme,\s*content = content,?\s*\)")
+    found = pat.findall(src, m.end())
+    if len(found) != 1: return None
+    n = pat.search(src, m.end())
+    rep = f"com.metrolist.music.discover.v21.theme.DiscoverTheme(colorScheme, darkTheme, themeColor, content) // {MARK} theme"
+    return src[:n.start()] + rep + src[n.end():]
+
+# Hook 8 (v2.1) - ui/component/AppNavigation.kt: the bottom navigation bar gets the Discover look (rounded top, light line).
+def navbar(src):
+    m = re.search(r"fun AppNavigationBar\(", src)
+    if not m: return None
+    pat = re.compile(r"NavigationBar\(\s*\n([ \t]*)modifier = modifier,")
+    n = pat.search(src, m.end())
+    if not n or n.start() - m.end() > 1500: return None
+    rep = f"NavigationBar(\n{n.group(1)}modifier = com.metrolist.music.discover.v21.theme.DiscoverChrome.navBar(modifier), // {MARK} navbar"
+    return src[:n.start()] + rep + src[n.end():]
+
+# Hook 9 (v2.1) - ui/player/MiniPlayer.kt (new design): gradient glow border instead of the plain outline.
+def miniplayer(src):
+    anchor = ".border(1.dp, outlineColor.copy(alpha = 0.3f), RoundedCornerShape(32.dp))"
+    if src.count(anchor) != 1: return None
+    return src.replace(anchor, f".then(com.metrolist.music.discover.v21.theme.DiscoverChrome.miniBorder(outlineColor)) // {MARK} miniplayer", 1)
+
 edit("app/src/main/kotlin/com/metrolist/music/playback/MusicService.kt", music_service, "stats")
 edit("app/src/main/kotlin/com/metrolist/music/ui/screens/HomeScreen.kt", home_screen, "home")
 edit("app/src/main/kotlin/com/metrolist/music/utils/Updater.kt", updater, "updater")
 edit("app/src/main/kotlin/com/metrolist/music/ui/screens/NavigationBuilder.kt", navigation, "routes")
 edit("app/src/main/kotlin/com/metrolist/music/ui/player/Player.kt", player, "player")
 edit("app/src/main/kotlin/com/metrolist/music/playback/MusicService.kt", service, "service")
+edit("app/src/main/kotlin/com/metrolist/music/ui/theme/Theme.kt", theme, "theme")
+edit("app/src/main/kotlin/com/metrolist/music/ui/component/AppNavigation.kt", navbar, "navbar")
+edit("app/src/main/kotlin/com/metrolist/music/ui/player/MiniPlayer.kt", miniplayer, "miniplayer")
 if errors:
     for e in errors: print("::error::" + e)
     sys.exit(3)

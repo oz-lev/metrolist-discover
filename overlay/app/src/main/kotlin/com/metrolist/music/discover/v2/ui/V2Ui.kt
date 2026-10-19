@@ -39,6 +39,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.runtime.remember
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
@@ -73,6 +77,28 @@ object V2Colors {
         Color(0xFF10B981) to Color(0xFF0EA5E9), Color(0xFFF59E0B) to Color(0xFFEF4444), Color(0xFF8B5CF6) to Color(0xFF22D3EE),
     )
     fun forKey(key: String): Brush { val p = pairs[abs(key.hashCode()) % pairs.size]; return Brush.linearGradient(listOf(p.first, p.second)) }
+    fun forKeyColor(key: String): Color = pairs[abs(key.hashCode()) % pairs.size].first.copy(alpha = 0.55f)
+}
+
+/** v2.1: the hero gradient follows the active theme (primary -> secondary -> tertiary). */
+@Composable
+fun themeHero(): Brush {
+    val c = MaterialTheme.colorScheme
+    return Brush.linearGradient(listOf(c.primary, c.secondary, c.tertiary))
+}
+
+@Composable
+fun themeCool(): Brush {
+    val c = MaterialTheme.colorScheme
+    return Brush.linearGradient(listOf(c.tertiary, c.primary))
+}
+
+/** v2.1 haptic feedback toggle: returns a function that buzzes lightly on taps when the setting is on. */
+@Composable
+fun rememberTap(): () -> Unit {
+    val haptic = LocalHapticFeedback.current
+    val ctx = LocalContext.current
+    return remember(haptic) { { if (com.metrolist.music.discover.v2.V2Settings.get(ctx).haptics) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } }
 }
 
 @Composable
@@ -188,12 +214,13 @@ fun TrackRow(t: TrackMeta, extra: String? = null, onClick: () -> Unit) {
 @Composable
 fun Pill(text: String, selected: Boolean = false, brush: Brush? = null, onClick: () -> Unit) {
     val bg = when {
-        selected -> brush ?: V2Colors.hero
+        selected -> brush ?: themeHero()
         else -> Brush.linearGradient(listOf(MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.colorScheme.surfaceContainerHighest))
     }
+    val tap = rememberTap()
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier.clip(RoundedCornerShape(50)).background(bg).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier = Modifier.clip(RoundedCornerShape(50)).background(bg).clickable { tap(); onClick() }.padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
         Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
             color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface)
@@ -208,11 +235,12 @@ fun LazyListScope.trackList(keyPrefix: String, tracks: List<TrackMeta>, extra: (
 }
 
 @Composable
-fun GradientButton(text: String, modifier: Modifier = Modifier, brush: Brush = V2Colors.hero, enabled: Boolean = true, onClick: () -> Unit) {
+fun GradientButton(text: String, modifier: Modifier = Modifier, brush: Brush = themeHero(), enabled: Boolean = true, onClick: () -> Unit) {
+    val tap = rememberTap()
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier.clip(RoundedCornerShape(50)).background(if (enabled) brush else V2Colors.night)
-            .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 20.dp, vertical = 14.dp),
+            .clickable(enabled = enabled) { tap(); onClick() }.padding(horizontal = 20.dp, vertical = 14.dp),
     ) { Text(text, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall) }
 }
 

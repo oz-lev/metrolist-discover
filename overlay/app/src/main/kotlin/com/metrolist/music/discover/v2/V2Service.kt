@@ -53,6 +53,7 @@ object V2Service {
             main.postDelayed(tick, 5_000L)
             V2Offline.schedule(service.applicationContext)
         }
+        runCatching { com.metrolist.music.discover.v21.V21Playback.attach(service) } // v2.1 playback features
     }
 
     private fun service(): MusicService? = serviceRef?.get()
@@ -91,17 +92,19 @@ object V2Service {
         val lock = if (set.noRepeatToday) TodayLog.lock(ctx, now) else null
         var v: Violation? = RuleEngine(engine.rules, lock).violation(t, vibe, now)
         if (v == null && RuleEngine.mizrahiOverCap(recentMizrahi.toList(), vibe.isMizrahi, set.maxMizrahiPct)) v = Violation.BLOCKED
+        val extra = if (v == null) runCatching { com.metrolist.music.discover.v21.V21Playback.extraViolation(ctx, t, md.explicit) }.getOrNull() else null
         val p = attachedTo?.get() ?: return
-        if (v != null && autoSkips < 12 && p.hasNextMediaItem()) {
+        if ((v != null || extra != null) && autoSkips < 12 && p.hasNextMediaItem()) {
             autoSkips++
             main.post { runCatching { p.seekToNextMediaItem() } }
             toast(ctx, "⏭️ דילגתי: " + when (v) {
                 Violation.BLOCKED -> "חסום עכשיו (הגדרות מוזרות)"
                 Violation.REPEAT_TODAY -> "כבר התנגן היום"
-                Violation.TOO_LONG -> "ארוך מ-3 דקות"
+                Violation.TOO_LONG -> "ארוך מדי"
                 Violation.REMIX -> "רמיקס"
                 Violation.LIVE -> "הופעה חיה"
                 Violation.TOO_ENERGETIC -> "מצב צב 🐢"
+                null -> extra ?: ""
             }, set.guardToasts)
         } else {
             autoSkips = 0

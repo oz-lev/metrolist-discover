@@ -24,8 +24,18 @@
 
 את האנרגיה ומצב הרוח של שיר YouTube לא נותן, אז המנוע מעריך אותם מהאמן, מילים בשם השיר (remix / slowed / phonk / live / acoustic), כתב עברי, שירים קשורים, ומהדילוגים והשמיעות המלאות שלך — ומתקן את עצמו עם הזמן.
 
+## חדש ב-v2.1 (ניסיונית) 🧪
+- 🎨 סטודיו עיצוב לכל האפליקציה: Neon Night, זהב מזרחי, פאנק אדום, אוקיינוס, AMOLED, שקיעה, יער, דינמי (לפי העטיפה), Metrolist קלאסי · צבע הדגשה · פינות · גופן עברי (Heebo/Rubik) · גודל טקסט · ערכה אקראית כל יום · סרגל ניווט ונגן מיני מעוצבים
+- 👥 פרופילים (אני, חדר כושר, עבודה, לילה, רכב, מסיבה, אורח + שלך) עם מעבר אוטומטי לפי שעה · 🕵️ מצב סודי
+- 🎤 קריוקי עם מילים מסונכרנות ומילוי מילה-מילה + שיתוף שורה כתמונה
+- 🚗 מצב רכב עם כפתורים ענקיים וקול ("תנגן משהו כמו…")
+- 👆 טעימות · 🤝 Blend עם חבר בקובץ · 🗂️ 5 תורים שמורים + היסטוריה · 🔀 ערבוב חכם · 🔁 Replay, שעון האזנה ומדד ייחודיות · 🎯 אתגר יומי
+- 🎛️ אקוולייזר אוטומטי לפי וייב · 🌀 Flow אינסופי · 😴 שינה עדינה · 🔁 לולאת A-B · ⏩ מהירות · ❤️ לייק אוטומטי · 🎧 הערות DJ
+- 🧩 2 ווידג׳טים: נגן + מיקס יומי
+- ⚙️ 60 הגדרות בקבוצות עם חיפוש · 16 הישגים
+
 ## בהמשך (מפת דרכים)
-מוזיקה לפי מזג אוויר · מצב קריוקי · מצב רכב · ווידג׳טים · Blend עם חבר · Drop Radar · מעברי DJ · חיפוש בזמזום · מילים במסך הנעילה.
+מוזיקה לפי מזג אוויר (צריך שירות מזג אוויר חיצוני) · Drop Radar · מעברי DJ · חיפוש בזמזום · מילים במסך הנעילה.
 
 ## איך זה משתפר לבד
 כל שיר מהגילוי ששומעים עד הסוף, עושים לו לייק או מדלגים עליו — מזיז קצת את משקלות הדירוג (בגבולות בטוחים), ואת אחוז הגילוי (בין 15% ל-45%).
@@ -70,7 +80,7 @@ tools/backup_to_tsv.py               Metrolist backup/song.db -> TSV for the CLI
 .github/actions/{build-apk,engine-check}, .github/workflows/{build.yml,sync.yml}
 ```
 
-## Hook points (the entire upstream footprint: 6 anchor-based hooks in 5 upstream files, 0 Gradle file changes)
+## Hook points (the entire upstream footprint: 9 anchor-based hooks in 8 upstream files, 0 Gradle file changes)
 1. `app/src/main/kotlin/com/metrolist/music/playback/MusicService.kt`, in `onPlaybackStatsReady(...)`, right after `val mediaItem = ...`:
    `runCatching { com.metrolist.music.discover.DiscoverHooks.onPlaybackStats(this, database, mediaItem, playbackStats.totalPlayTimeMs, dataStore.get(PauseListenHistoryKey, false)) }`
    (respects "pause listen history"; Metrolist itself only stores sessions >= 30 s, the hook also records the short ones = skips).
@@ -91,9 +101,21 @@ tools/backup_to_tsv.py               Metrolist backup/song.db -> TSV for the CLI
    `runCatching { com.metrolist.music.discover.v2.V2Service.attach(this) }` — queue guard (skips auto-advanced songs that break the
    weird-settings rules; a song picked by hand is never skipped), neighbours mode (caps `playerVolume` and applies a low-shelf cut through
    Metrolist's own `EqualizerService`, restores both when the window ends), schedules the overnight job.
+7. (v2.1) `app/src/main/kotlin/com/metrolist/music/ui/theme/Theme.kt`: the final `MaterialTheme(colorScheme = colorScheme, content = content)`
+   inside `MetrolistTheme` becomes `com.metrolist.music.discover.v21.theme.DiscoverTheme(colorScheme, darkTheme, themeColor, content)` —
+   the one theme-level hook that re-themes the whole app (colour scheme per Discover theme + accent, bundled Heebo/Rubik typography,
+   roundness shapes, expressive motion). "Metrolist classic" passes Metrolist's own scheme through.
+8. (v2.1) `app/src/main/kotlin/com/metrolist/music/ui/component/AppNavigation.kt`, in `AppNavigationBar(...)`: `modifier = modifier,` of the
+   `NavigationBar(` becomes `modifier = DiscoverChrome.navBar(modifier),` (rounded top + theme light line, when "navbar glow" is on).
+9. (v2.1) `app/src/main/kotlin/com/metrolist/music/ui/player/MiniPlayer.kt`: `.border(1.dp, outlineColor.copy(alpha = 0.3f), RoundedCornerShape(32.dp))`
+   becomes `.then(DiscoverChrome.miniBorder(outlineColor))` (gradient glow border when "mini glow" is on, otherwise the original border).
+
+v2.1 screens (theme studio, profiles, karaoke, car mode, samples, queues, blend, replay, settings hub) ride hook 4's `discoverRoutes`; the
+player tools row rides hook 5; A-B loop, gentle sleep, auto-EQ, auto-like, DJ intros, Flow, queue history and widgets ride hook 6.
+Widgets are `AppWidgetProvider`s declared in the overlay release manifest (receivers only; no permission).
 
 The v2 Home needs no extra hook: hook 2's `discoverForYouSection()` renders `V2HomeSection()` (or the v1 section when the user turns the new
-home off). All hook lines carry the marker `[metrolist-discover hook] <name>` (stats, home, updater, routes, player, service);
+home off). All hook lines carry the marker `[metrolist-discover hook] <name>` (stats, home, updater, routes, player, service, theme, navbar, miniplayer);
 `apply_hooks.py` exits 3 with `::error::` if any anchor is missing or ambiguous, which fails the sync bot and opens a `sync-failure` issue.
 `overlay/app/src/release/AndroidManifest.xml` is a new file (manifest merge), not an edit; `apply-overlay.sh` fails if upstream ever ships it. App id / name use upstream's own env overrides
 (`METROLIST_APPLICATION_ID=com.metrolist.music.oz`, `METROLIST_APP_NAME="Metrolist Discover"`), versionName gets `+<commit>`

@@ -113,9 +113,12 @@ fun V2HomeSection() {
                         style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
                     Text("מה בא לך לשמוע?", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                RoundIcon("🎨") { nav.navigate(V2Routes.THEME) }
                 RoundIcon("🏆") { nav.navigate(V2Routes.PROFILE) }
                 RoundIcon("🧪") { nav.navigate(V2Routes.WEIRD) }
             }
+            // v2.1: quick profile switcher
+            com.metrolist.music.discover.v21.ui.ProfileSwitcherRow(Modifier.padding(top = 6.dp), onManage = { nav.navigate(V2Routes.PROFILES) })
 
             // mood chips
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -127,7 +130,7 @@ fun V2HomeSection() {
             // someone else's taste banner
             settings.activeTaste()?.let { t ->
                 val left = ((settings.tasteUntil - System.currentTimeMillis()) / 60_000L).coerceAtLeast(0)
-                V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), brush = V2Colors.cool) {
+                V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), brush = themeCool()) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
                         Text("${t.emoji} מצב טעם: ${t.he} · עוד $left דק׳", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         Text("עצור", color = Color.White, fontWeight = FontWeight.ExtraBold,
@@ -159,6 +162,9 @@ fun V2HomeSection() {
                     run("הופך רגשות…") { V2Engine.moodFlip(ctx, db) }
                 }
             }
+
+            // v2.1: ask music, daily challenge, toolbox, widget actions
+            com.metrolist.music.discover.v21.ui.V21HomeExtras { label, block -> run(label, block) }
 
             // discover for you, with % match
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 14.dp)) {
@@ -206,15 +212,16 @@ private fun RoundIcon(emoji: String, onClick: () -> Unit) {
 private fun HeroCard(mix: BuiltMix?, onPlay: () -> Unit) {
     val glow = rememberInfiniteTransition(label = "hero")
     val shift by glow.animateFloat(0f, 1f, infiniteRepeatable(tween(6000), RepeatMode.Reverse), label = "shift")
+    val cs = MaterialTheme.colorScheme
     val brush = Brush.linearGradient(
-        listOf(Color(0xFF7C3AED), Color(0xFFDB2777), Color(0xFFF97316)),
+        listOf(cs.primary, cs.secondary, cs.tertiary),
         start = androidx.compose.ui.geometry.Offset(0f + 400f * shift, 0f), end = androidx.compose.ui.geometry.Offset(900f, 700f - 300f * shift),
     )
     V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), brush = brush, onClick = onPlay) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(18.dp)) {
             Column(Modifier.weight(1f)) {
                 Text("✨ נבנה במיוחד בשבילך", color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.labelMedium)
-                Text("המיקס היומי שלך", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black)
+                Text(mix?.title ?: "המיקס היומי שלך", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 val sub = mix?.let { m ->
                     val min = m.tracks.sumOf { t -> t.durationSec.coerceAtLeast(0) } / 60
                     "${m.tracks.size} שירים · $min דק׳ · " + m.tracks.take(3).joinToString(", ") { it.artistLabel.substringBefore(",") }
@@ -222,7 +229,7 @@ private fun HeroCard(mix: BuiltMix?, onPlay: () -> Unit) {
                 Text(sub, color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(12.dp))
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.size(54.dp).clip(CircleShape).background(Color.White)) {
-                    Text("▶", color = Color(0xFF7C3AED), fontSize = 24.sp, fontWeight = FontWeight.Black)
+                    Text("▶", color = cs.primary, fontSize = 24.sp, fontWeight = FontWeight.Black)
                 }
             }
             Spacer(Modifier.width(12.dp))

@@ -9,6 +9,12 @@ import com.metrolist.music.discover.engine.BlockRule
 import com.metrolist.music.discover.engine.NeighboursMode
 import com.metrolist.music.discover.engine.RuleSet
 import com.metrolist.music.discover.engine.TastePreset
+import com.metrolist.music.discover.engine.AutoRule
+import com.metrolist.music.discover.engine.BubbleFreq
+import com.metrolist.music.discover.engine.DailyPlan
+import com.metrolist.music.discover.engine.LangMode
+import com.metrolist.music.discover.engine.MoodPreset
+import com.metrolist.music.discover.engine.ShapeOptions
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -60,9 +66,62 @@ class V2Settings private constructor(private val store: DiscoverStore) {
 
     var corrections: String? get() = store.get("v2.vibe.corr"); set(v) { store.put("v2.vibe.corr", v) }
 
+    // ------------------------------------------------------------------ v2.1 (all per profile unless noted)
+    private fun f(k: String, def: Float) = store.get(k)?.toFloatOrNull() ?: def
+    // design studio
+    var themeId: String get() = store.get("v21.theme") ?: "NEON"; set(v) = save("v21.theme", v)
+    /** 0 = the theme's own accent */
+    var accent: Int get() = i("v21.accent", 0); set(v) = save("v21.accent", v)
+    var roundness: Float get() = f("v21.round", 1f); set(v) = save("v21.round", v.coerceIn(0.3f, 2f))
+    var font: String get() = store.get("v21.font") ?: "HEEBO"; set(v) = save("v21.font", v)
+    var fontScale: Float get() = f("v21.fontScale", 1f); set(v) = save("v21.fontScale", v.coerceIn(0.8f, 1.3f))
+    var randomDailyTheme: Boolean get() = b("v21.randomTheme", false); set(v) = save("v21.randomTheme", v)
+    var navGlow: Boolean get() = b("v21.navGlow", true); set(v) = save("v21.navGlow", v)
+    var miniGlow: Boolean get() = b("v21.miniGlow", true); set(v) = save("v21.miniGlow", v)
+    var haptics: Boolean get() = b("v21.haptics", true); set(v) = save("v21.haptics", v)
+    var motionExpressive: Boolean get() = b("v21.motion", true); set(v) = save("v21.motion", v)
+    var gradientHeaders: Boolean get() = b("v21.gradHeaders", true); set(v) = save("v21.gradHeaders", v)
+    // algorithm
+    var seedLock: Boolean get() = b("v21.seedLock", false); set(v) = save("v21.seedLock", v)
+    var seed: Long get() = store.getLong("v21.seed", 7L); set(v) = save("v21.seed", v.coerceIn(0L, 9999L))
+    var weekdayMoods: Map<Int, MoodPreset> get() = DailyPlan.decodeWeekday(store.get("v21.weekday")); set(v) = save("v21.weekday", DailyPlan.encodeWeekday(v))
+    var defaultMood: MoodPreset? get() = store.get("v21.defaultMood")?.let { n -> MoodPreset.entries.firstOrNull { it.name == n } }; set(v) = save("v21.defaultMood", v?.name)
+    var daylist: Boolean get() = b("v21.daylist", true); set(v) = save("v21.daylist", v)
+    var morningRamp: Boolean get() = b("v21.ramp", false); set(v) = save("v21.ramp", v)
+    var favoriteEvery: Int get() = i("v21.favEvery", 0); set(v) = save("v21.favEvery", v.coerceIn(0, 10))
+    var neverHeard: Boolean get() = b("v21.neverHeard", false); set(v) = save("v21.neverHeard", v)
+    // queue rules
+    /** 0 = off */
+    var maxLengthMin: Int get() = i("v21.maxLen", 0); set(v) = save("v21.maxLen", v.coerceIn(0, 15))
+    var artistGap: Int get() = i("v21.artistGap", 0); set(v) = save("v21.artistGap", v.coerceIn(0, 10))
+    var lang: LangMode get() = store.get("v21.lang")?.let { n -> LangMode.entries.firstOrNull { it.name == n } } ?: LangMode.ALL; set(v) = save("v21.lang", v.name)
+    var explicitFilter: Boolean get() = b("v21.explicit", false); set(v) = save("v21.explicit", v)
+    // sound
+    var autoEq: Boolean get() = b("v21.autoEq", false); set(v) = save("v21.autoEq", v)
+    var autoEqIntensity: Float get() = f("v21.autoEqK", 1f); set(v) = save("v21.autoEqK", v.coerceIn(0.2f, 1.5f))
+    var flow: Boolean get() = b("v21.flow", false); set(v) = save("v21.flow", v)
+    var sleepFadeMin: Int get() = i("v21.sleepFade", 5); set(v) = save("v21.sleepFade", v.coerceIn(1, 20))
+    var smartShuffleEvery: Int get() = i("v21.smartEvery", 3); set(v) = save("v21.smartEvery", v.coerceIn(1, 10))
+    // privacy & fun
+    var secret: Boolean get() = b("v21.secret", false); set(v) = save("v21.secret", v)
+    var autoLike: Boolean get() = b("v21.autoLike", false); set(v) = save("v21.autoLike", v)
+    var autoLikeAfter: Int get() = i("v21.autoLikeN", 3); set(v) = save("v21.autoLikeN", v.coerceIn(2, 10))
+    var djIntros: Boolean get() = b("v21.djIntros", false); set(v) = save("v21.djIntros", v)
+    var bubbleFreq: BubbleFreq get() = store.get("v21.bubbleFreq")?.let { n -> BubbleFreq.entries.firstOrNull { it.name == n } } ?: BubbleFreq.EVERY_OPEN; set(v) = save("v21.bubbleFreq", v.name)
+    var challengeOnHome: Boolean get() = b("v21.challenge", true); set(v) = save("v21.challenge", v)
+    var blendName: String get() = store.get("v21.blendName").orEmpty(); set(v) = save("v21.blendName", v.take(24))
+    // global (all profiles): the auto-switch schedule
+    var autoSwitch: Boolean get() = store.rawGet("g.autoSwitch")?.toBooleanStrictOrNull() ?: false; set(v) { store.rawPut("g.autoSwitch", v.toString()); bump() }
+    var autoRules: List<AutoRule> get() = AutoRule.decodeAll(store.rawGet("g.autoRules")); set(v) { store.rawPut("g.autoRules", AutoRule.encodeAll(v)); bump() }
+
+    fun shape(): ShapeOptions = ShapeOptions(
+        lang = lang, maxDurationSec = maxLengthMin.takeIf { it > 0 }?.let { it * 60 }, neverHeard = neverHeard,
+        favoriteEvery = favoriteEvery, artistGap = artistGap, morningRamp = morningRamp,
+    )
+
     fun rules(): RuleSet = RuleSet(
         noRepeatToday = noRepeatToday,
-        maxDurationSec = if (shortOnly) 180 else null,
+        maxDurationSec = listOfNotNull(if (shortOnly) 180 else null, maxLengthMin.takeIf { it > 0 }?.let { it * 60 }).minOrNull(),
         maxMizrahiPct = maxMizrahiPct,
         noRemix = noRemix,
         noLive = noLive,
@@ -82,7 +141,11 @@ class V2Settings private constructor(private val store: DiscoverStore) {
     fun resetAll() {
         listOf("v2.boldness", "v2.maxMizrahi", "v2.skipPenalty", "v2.noRepeat", "v2.shortOnly", "v2.noRemix", "v2.noLive", "v2.turtle",
             "v2.surprise5", "v2.guard", "v2.guardToasts", "v2.blocks", "v2.nb.on", "v2.nb.start", "v2.nb.end", "v2.nb.vol", "v2.nb.bass",
-            "v2.taste", "v2.tasteUntil", "v2.offline", "v2.vibeBar", "v2.animatedArt", "v2.home", "v2.vibe.corr").forEach { store.put(it, null) }
+            "v2.taste", "v2.tasteUntil", "v2.offline", "v2.vibeBar", "v2.animatedArt", "v2.home", "v2.vibe.corr",
+            "v21.accent", "v21.round", "v21.font", "v21.fontScale", "v21.randomTheme", "v21.navGlow", "v21.miniGlow", "v21.haptics", "v21.motion", "v21.gradHeaders",
+            "v21.seedLock", "v21.seed", "v21.weekday", "v21.defaultMood", "v21.daylist", "v21.ramp", "v21.favEvery", "v21.neverHeard",
+            "v21.maxLen", "v21.artistGap", "v21.lang", "v21.explicit", "v21.autoEq", "v21.autoEqK", "v21.flow", "v21.sleepFade",
+            "v21.smartEvery", "v21.secret", "v21.autoLike", "v21.autoLikeN", "v21.djIntros", "v21.bubbleFreq", "v21.challenge").forEach { store.put(it, null) }
         _version.value = _version.value + 1
     }
 

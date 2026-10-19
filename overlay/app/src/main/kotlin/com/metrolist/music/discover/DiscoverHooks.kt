@@ -37,6 +37,9 @@ object DiscoverHooks {
         val app = context.applicationContext
         io.execute {
             runCatching {
+                // v2.1: secret mode and the guest profile never record anything (Metrolist's own history is paused for them too)
+                if (!com.metrolist.music.discover.engine.Recording.shouldRecord(
+                        com.metrolist.music.discover.v2.V2Settings.get(app).secret, com.metrolist.music.discover.engine.ProfileScope.guest, historyPaused)) return@execute
                 val store = DiscoverStore.get(app)
                 val durationMs = if (durSec > 0) durSec * 1000L else songDurationMs(database, songId)
                 val th = DiscoverRepository.thresholds(store)

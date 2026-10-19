@@ -8,6 +8,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.metrolist.music.discover.engine.Features
+import com.metrolist.music.discover.engine.ProfileScope
 import com.metrolist.music.discover.engine.Slot
 
 /**
@@ -47,6 +48,12 @@ class DiscoverStore private constructor(context: Context) :
         return out
     }
 
+    /** v2.1 auto-like: how many earlier listens of this song reached 85 % of its length. */
+    fun fullListens(songId: String): Int =
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM plays WHERE songId = ? AND durationMs > 0 AND playedMs * 100 >= durationMs * 85", arrayOf(songId)).use { c ->
+            if (c.moveToFirst()) c.getInt(0) else 0
+        }
+
     fun putRecs(recs: List<Triple<String, Slot, Features>>, ts: Long) {
         val db = writableDatabase
         db.beginTransaction()
@@ -66,9 +73,24 @@ class DiscoverStore private constructor(context: Context) :
             else Features.decode(c.getString(1))?.let { Slot.valueOf(c.getString(0)) to it }
         }
 
-    fun get(k: String): String? = readableDatabase.rawQuery("SELECT v FROM kv WHERE k = ?", arrayOf(k)).use { c -> if (c.moveToFirst()) c.getString(0) else null }
-    fun put(k: String, v: String?) {
+    /** Settings/learning keys go through the active profile (v2.1, see ProfileScope); the default profile keeps the original keys. */
+    fun get(k: String): String? = rawGet(ProfileScope.key(k))
+    fun put(k: String, v: String?) = rawPut(ProfileScope.key(k), v)
+
+    fun rawGet(k: String): String? = readableDatabase.rawQuery("SELECT v FROM kv WHERE k = ?", arrayOf(k)).use { c -> if (c.moveToFirst()) c.getString(0) else null }
+    fun rawPut(k: String, v: String?) {
         writableDatabase.insertWithOnConflict("kv", null, ContentValues().apply { put("k", k); put("v", v) }, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+    /** All raw keys (with values) starting with [prefix]. */
+    fun rawEntries(prefix: String): Map<String, String?> {
+        val out = HashMap<String, String?>()
+        readableDatabase.rawQuery("SELECT k, v FROM kv WHERE substr(k, 1, ?) = ?", arrayOf(prefix.length.toString(), prefix)).use { c ->
+            while (c.moveToNext()) out[c.getString(0)] = c.getString(1)
+        }
+        return out
+    }
+    fun rawDeletePrefix(prefix: String) {
+        writableDatabase.delete("kv", "substr(k, 1, ?) = ?", arrayOf(prefix.length.toString(), prefix))
     }
     fun getBool(k: String, def: Boolean) = get(k)?.toBooleanStrictOrNull() ?: def
     fun getLong(k: String, def: Long) = get(k)?.toLongOrNull() ?: def
@@ -76,7 +98,15 @@ class DiscoverStore private constructor(context: Context) :
     companion object {
         @Volatile private var instance: DiscoverStore? = null
         fun get(context: Context): DiscoverStore = instance ?: synchronized(this) {
-            instance ?: DiscoverStore(context).also { instance = it }
+            instance ?: DiscoverStore(context).also {
+                instance = it
+                // v2.1: restore the active profile before anything reads a setting
+                runCatching {
+                    val id = it.rawGet("g.activeProfile")
+                    val list = com.metrolist.music.discover.engine.Profiles.decode(it.rawGet("g.profiles"))
+                    list.firstOrNull { p -> p.id == id }?.let { p -> ProfileScope.active = p.id; ProfileScope.guest = p.guest }
+                }
+            }
         }
 
         const val K_TUNER = "tuner.state"

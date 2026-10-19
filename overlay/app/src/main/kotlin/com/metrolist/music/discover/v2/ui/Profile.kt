@@ -86,7 +86,7 @@ fun ProfileScreen(onBack: () -> Unit) {
 @Composable
 private fun LevelCard(p: Achievements.Profile) {
     val prog by animateFloatAsState(p.levelProgress.toFloat(), tween(1200), label = "lvl")
-    V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), brush = V2Colors.hero) {
+    V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), brush = themeHero()) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(20.dp)) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.size(110.dp)) {
                 Canvas(Modifier.size(110.dp)) {
@@ -160,7 +160,7 @@ private fun BadgeCard(b: Achievements.Badge, modifier: Modifier) {
     V2Card(modifier) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(14.dp)) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.size(56.dp).clip(CircleShape)
-                .background(if (b.earned) V2Colors.hero else Brush.linearGradient(listOf(Color.Gray.copy(alpha = 0.3f), Color.Gray.copy(alpha = 0.2f))))) {
+                .background(if (b.earned) themeHero() else Brush.linearGradient(listOf(Color.Gray.copy(alpha = 0.3f), Color.Gray.copy(alpha = 0.2f))))) {
                 Text(b.emoji, fontSize = 28.sp, modifier = Modifier.alpha(if (b.earned) 1f else 0.45f))
             }
             Text(b.he, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))

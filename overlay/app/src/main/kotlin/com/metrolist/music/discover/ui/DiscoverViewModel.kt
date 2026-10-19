@@ -8,6 +8,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.metrolist.music.db.MusicDatabase
 import com.metrolist.music.discover.DiscoverCounters
+import com.metrolist.music.discover.DiscoverHooks
+import com.metrolist.music.discover.DiscoverStore
 import com.metrolist.music.discover.DiscoverItem
 import com.metrolist.music.discover.DiscoverRepository
 import com.metrolist.music.discover.engine.Evaluator
@@ -53,7 +55,7 @@ class DiscoverViewModel @Inject constructor(
             _state.value = _state.value.copy(items = cached.first, bubbleEnabled = withContext(Dispatchers.IO) { repo.bubbleEnabled() })
             if (cached.first.isEmpty() || cached.second > 3L * 3_600_000L) refresh()
             launch { runCatching { repo.mixes() }.onSuccess { _state.value = _state.value.copy(mixes = it) } }
-            if (!bubbleShownThisProcess) {
+            if (!bubbleShownThisProcess && withContext(Dispatchers.IO) { bubbleGate() }) {
                 bubbleShownThisProcess = true
                 runCatching { repo.nextFact() }.getOrNull()?.let { f ->
                     _state.value = _state.value.copy(fact = f)
@@ -62,6 +64,18 @@ class DiscoverViewModel @Inject constructor(
             }
         }
     }
+
+    /** v2.1 "stats bubble frequency": every open / every 3rd open / once a day / never. */
+    private fun bubbleGate(): Boolean = runCatching {
+        val store = DiscoverStore.get(context)
+        val set = com.metrolist.music.discover.v2.V2Settings.get(context)
+        val opens = (store.get("v21.opens")?.toIntOrNull() ?: 0) + 1
+        store.put("v21.opens", opens.toString())
+        val today = com.metrolist.music.discover.engine.DayClock.dayKey(DiscoverHooks.nowTs())
+        val show = com.metrolist.music.discover.engine.BubbleGate.shouldShow(set.bubbleFreq, opens, store.get("v21.bubbleDay")?.toLongOrNull() ?: -1L, today)
+        if (show) store.put("v21.bubbleDay", today.toString())
+        show
+    }.getOrDefault(true)
 
     fun refresh() {
         if (_state.value.loading) return

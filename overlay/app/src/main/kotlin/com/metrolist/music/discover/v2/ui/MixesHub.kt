@@ -84,6 +84,7 @@ fun MixesHubScreen(onBack: () -> Unit) {
     }
 
     V2Page(title = "מרכז המיקסים 🎛️", subtitle = "מסובבים, מזיזים, מנגנים", onBack = onBack) {
+        item(key = "profiles") { com.metrolist.music.discover.v21.ui.ProfileSwitcherRow(Modifier.padding(vertical = 4.dp)) }
         item(key = "dial") {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 MoodDial(selected = dial, onSelect = { dial = it; it.target.energy?.let { e -> energy = e.toFloat() } })
@@ -132,12 +133,12 @@ fun MixesHubScreen(onBack: () -> Unit) {
             }
         }
         item(key = "trip") {
-            V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), brush = V2Colors.cool) {
+            V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), brush = themeCool()) {
                 Column(Modifier.padding(16.dp)) {
                     Text("🚗 אני נוסע ${tripMin.roundToInt()} דקות", color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
                     Text("פלייליסט באורך של הנסיעה, בדיוק", color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
                     Slider(value = tripMin, onValueChange = { tripMin = it }, valueRange = 5f..120f, steps = 22)
-                    GradientButton("בנה נסיעה ▶", Modifier.fillMaxWidth(), brush = V2Colors.hero) {
+                    GradientButton("בנה נסיעה ▶", Modifier.fillMaxWidth(), brush = themeHero()) {
                         val m = tripMin.roundToInt()
                         run("סופר דקות…") { V2Engine.trip(ctx, db, m) }
                     }
