@@ -39,9 +39,22 @@ runs:
         PULL_REQUEST: "false"
       run: |
         chmod +x gradlew
+        set -o pipefail
         ./gradlew --console=plain --warning-mode none \
           :app:testIzzyReleaseUnitTest --tests 'com.metrolist.music.discover.*' \
-          :app:assembleIzzyRelease
+          :app:assembleIzzyRelease 2>&1 | tee "$RUNNER_TEMP/build.log"
+    - name: Report build errors as annotations
+      if: failure()
+      shell: bash
+      run: |
+        L="$RUNNER_TEMP/build.log"; [ -f "$L" ] || exit 0
+        grep -nE '^e: |error:|What went wrong|FAILED|Exception|> Task .*FAILED|Could not|expected|Unresolved|cannot|failed' "$L" | grep -v 'warning:' | head -120 > "$RUNNER_TEMP/err.txt" || true
+        [ -s "$RUNNER_TEMP/err.txt" ] || tail -60 "$L" > "$RUNNER_TEMP/err.txt"
+        split -l 12 "$RUNNER_TEMP/err.txt" "$RUNNER_TEMP/errpart."
+        for f in "$RUNNER_TEMP"/errpart.*; do
+          msg=$(cut -c1-400 "$f" | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"}{print}')
+          echo "::error title=build::$msg"
+        done
     - name: Sign
       id: sign
       shell: bash

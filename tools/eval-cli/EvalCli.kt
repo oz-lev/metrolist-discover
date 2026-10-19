@@ -144,7 +144,7 @@ fun main(args: Array<String>) {
     arg("--json")?.let { f ->
         fun esc(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")
         val sb = StringBuilder("{\"metrics\":[")
-        sb.append(all.joinToString(",") { "{\"method\":\"${it.method}\",\"mode\":\"${it.mode}\",\"k\":${it.k},\"recall\":${it.recall},\"precision\":${it.precision},\"dayHit\":${it.dayHitRate},\"targets\":${it.targets},\"pool\":${it.pool}}" })
+        sb.append(all.joinToString(",") { "{\"method\":\"${it.method}\",\"mode\":\"${it.mode}\",\"k\":${it.k},\"recall\":${it.recall},\"precision\":${it.precision},\"dayHit\":${it.dayHitRate},\"targets\":${it.targets},\"reachable\":${it.reachable},\"pool\":${it.pool}}" })
         sb.append("],\"top\":[")
         sb.append(recs.joinToString(",") { "{\"title\":\"${esc(it.track.title)}\",\"artist\":\"${esc(it.track.artistLabel)}\",\"slot\":\"${it.slot}\",\"reason\":\"${it.reason}\"}" })
         sb.append("],\"facts\":[")

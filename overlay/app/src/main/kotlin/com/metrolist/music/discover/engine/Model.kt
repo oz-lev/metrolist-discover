@@ -15,7 +15,7 @@ data class TrackMeta(
     val thumbnailUrl: String? = null,
 ) {
     val mainArtist: String get() = artistIds.firstOrNull() ?: "?"
-    val artistLabel: String get() = artistNames.joinToString(", ").ifBlank { mainArtist }
+    val artistLabel: String get() = artistNames.filter { n -> n.any { it.isLetterOrDigit() } }.joinToString(", ").ifBlank { mainArtist }
 }
 
 /**
