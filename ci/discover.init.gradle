@@ -5,13 +5,16 @@
 def vc = System.getenv("DISCOVER_VERSION_CODE")
 def vn = System.getenv("DISCOVER_VERSION_NAME")
 def commit = System.getenv("METROLIST_BUILD_COMMIT")
+// Optional display suffix (file VERSION_SUFFIX, e.g. "-v2exp"). Only versionName shows it; BASE_VERSION_NAME stays
+// numeric because the in-app updater compares it number by number with the (numeric) release title.
+def suffix = System.getenv("DISCOVER_VERSION_SUFFIX") ?: ""
 allprojects {
     pluginManager.withPlugin("com.android.application") {
         def comps = project.extensions.getByName("androidComponents")
         comps.finalizeDsl { ext ->
             if (vc) ext.defaultConfig.versionCode = vc.toInteger()
             if (vn) {
-                ext.defaultConfig.versionName = vn + (commit ? "+" + commit.take(7).toLowerCase() : "")
+                ext.defaultConfig.versionName = vn + suffix + (commit ? "+" + commit.take(7).toLowerCase() : "")
                 ext.defaultConfig.buildConfigField("String", "BASE_VERSION_NAME", "\"" + vn + "\"")
             }
             println("metrolist-discover: versionCode=" + ext.defaultConfig.versionCode + " versionName=" + ext.defaultConfig.versionName)

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Metrolist Discover v2 (fork addition, GPL-3.0). Merged into release builds only; adds NO permission.
+     The overnight offline mix job (platform JobScheduler; BIND_JOB_SERVICE is the system's guard on the service, not an app permission). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <service
+            android:name="com.metrolist.music.discover.v2.V2OfflineJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+    </application>
+</manifest>

@@ -105,15 +105,24 @@ class DiscoverRepository(private val context: Context, private val database: Mus
         val history = loadHistory()
         val now = DiscoverHooks.nowTs()
         val state = tunerState()
-        val engine = DiscoverEngine(config.copy(weights = state.weights))
+        // v2 weird settings: skip-penalty strength scales the skip weight, boldness moves the explore ratio
+        val v2 = com.metrolist.music.discover.v2.V2Settings.get(context)
+        val weights = state.weights.copy(wSkip = state.weights.wSkip * v2.skipPenalty)
+        val engine = DiscoverEngine(config.copy(weights = weights))
         val profile = engine.profile(history, now)
         val th = profile.thresholds
         store.put(DiscoverStore.K_THRESHOLDS, "${th.skipFraction},${th.skipSeconds},${th.fullFraction}")
         awardLikes(history)
         if (profile.isColdStart) return@withContext Result(emptyList(), true)
         val candidates = CandidateBuilder.offline(history, profile) + (if (online) onlineCandidates(history, profile) else emptyList())
-        val recs = engine.recommend(history, candidates, now, n = config.listSize, weights = state.weights,
-            exploreRatio = tuner.exploreRatio(state), profile = profile)
+        val recsAll = engine.recommend(history, candidates, now, n = config.listSize + 10, weights = weights,
+            exploreRatio = v2.effectiveExplore(tuner.exploreRatio(state)), profile = profile)
+        // v2 rules (day/hour blocks, < 3 min, no remix/live, turtle mode, max Mizrahi %) apply to Discover too
+        val est = com.metrolist.music.discover.v2.V2Engine.estimator(context)
+        val rules = com.metrolist.music.discover.engine.RuleEngine(v2.rules().copy(noRepeatToday = false), null)
+        val pool = recsAll.map { com.metrolist.music.discover.engine.PoolTrack(it.track, est.estimate(it.track, history.tracks, history.related), 0.0, 0.5) }
+        val keep = rules.filter(pool, now).map { it.track.id }.toHashSet()
+        val recs = recsAll.filter { it.track.id in keep }.take(config.listSize)
         store.putRecs(recs.map { Triple(it.track.id, it.slot, it.features) }, now)
         val items = recs.map { DiscoverItem(it.track, it.reason, it.slot, it.seedLabel) }
         store.put(DiscoverStore.K_CACHE, encode(items)); store.put(DiscoverStore.K_CACHE_TS, now.toString())

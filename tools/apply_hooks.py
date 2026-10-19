@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inserts the two Metrolist-Discover hooks into an upstream Metrolist checkout (GPL-3.0).
+"""Inserts the Metrolist-Discover hooks (6 of them, see README-OZ.md) into an upstream Metrolist checkout (GPL-3.0).
 
 Anchor based instead of line-number patches, so upstream edits around the hooks don't break it.
 Idempotent (a hook already present is left alone). Exits 3 with a clear message when an anchor
@@ -11,18 +11,19 @@ UP = pathlib.Path(sys.argv[1])
 MARK = "[metrolist-discover hook]"
 errors = []
 
-def edit(rel, fn):
+def edit(rel, fn, name):
+    """Apply one hook. Every hook line carries "[metrolist-discover hook] <name>" so a file can hold several."""
     p = UP / rel
     if not p.exists():
-        errors.append(f"{rel}: file not found"); return
+        errors.append(f"{rel}: file not found ({name})"); return
     src = p.read_text()
-    if MARK in src:
-        print(f"{rel}: hook already present"); return
+    if f"{MARK} {name}" in src:
+        print(f"{rel}: hook '{name}' already present"); return
     out = fn(src)
-    if out is None:
-        errors.append(f"{rel}: anchor not found"); return
+    if out is None or out == src:
+        errors.append(f"{rel}: anchor for hook '{name}' not found"); return
     p.write_text(out)
-    print(f"{rel}: hook inserted")
+    print(f"{rel}: hook '{name}' inserted")
 
 # Hook 1 - MusicService.onPlaybackStatsReady: report every playback session (incl. short skips).
 def music_service(src):
@@ -32,7 +33,7 @@ def music_service(src):
     if not n or n.start() - m.end() > 600: return None
     indent = n.group(1)
     line = (f"\n{indent}runCatching {{ com.metrolist.music.discover.DiscoverHooks.onPlaybackStats(this, database, mediaItem, "
-            f"playbackStats.totalPlayTimeMs, dataStore.get(PauseListenHistoryKey, false)) }} // {MARK}")
+            f"playbackStats.totalPlayTimeMs, dataStore.get(PauseListenHistoryKey, false)) }} // {MARK} stats")
     return src[:n.end()] + line + src[n.end():]
 
 # Hook 2 - HomeScreen: the "Discover for you" section right under the chips row.
@@ -55,7 +56,7 @@ def home_screen(src):
         return None
     line_start = src.rfind("\n", 0, item) + 1
     indent = src[line_start:item]
-    hook = f"\n\n{indent}com.metrolist.music.discover.ui.discoverForYouSection(this) // {MARK}"
+    hook = f"\n\n{indent}com.metrolist.music.discover.ui.discoverForYouSection(this) // {MARK} home"
     return src[:i + 1] + hook + src[i + 1:]
 
 # Hook 3 - utils/Updater.kt: the in-app updater reads THIS fork's releases, never upstream's (or the KMP app's).
@@ -66,15 +67,43 @@ def updater(src):
         (r'private const val KMP_APK_NAME = "[^"]*"', "private const val KMP_APK_NAME = com.metrolist.music.discover.DiscoverUpdate.KMP_APK_NAME"),
     ]
     for pat, rep in reps:
-        src, n = re.subn(pat, rep + f" // {MARK}", src, count=1)
+        src, n = re.subn(pat, rep + f" // {MARK} updater", src, count=1)
         if n != 1 and "KMP" not in pat: return None
     if "MetrolistGroup/Metrolist" in src:
         return None  # some other upstream release URL appeared: refuse rather than silently offer upstream APKs
     return src
 
-edit("app/src/main/kotlin/com/metrolist/music/playback/MusicService.kt", music_service)
-edit("app/src/main/kotlin/com/metrolist/music/ui/screens/HomeScreen.kt", home_screen)
-edit("app/src/main/kotlin/com/metrolist/music/utils/Updater.kt", updater)
+# Hook 4 - NavigationBuilder: the v2 screens (Mixes hub, Search lab, Weird settings, Profile) as "discover/*" routes.
+def navigation(src):
+    m = re.search(r"fun NavGraphBuilder\.navigationBuilder\(", src)
+    if not m: return None
+    body = re.compile(r"\)\s*\{[ \t]*\n").search(src, m.end())
+    if not body or body.start() - m.end() > 600: return None
+    line = f"    com.metrolist.music.discover.v2.ui.discoverRoutes(this, navController) // {MARK} routes\n"
+    return src[:body.end()] + line + src[body.end():]
+
+# Hook 5 - Player.kt (portrait layout): vibe buttons + animated art-colour strip right under the controls.
+def player(src):
+    pat = re.compile(r"(mediaMetadata\?\.let \{\s*controlsContent\(it\)\s*\}\s*\n)([ \t]*)(Spacer\(Modifier\.height\(30\.dp\)\))")
+    found = pat.findall(src)
+    if len(found) != 1: return None
+    return pat.sub(lambda m: m.group(1) + m.group(2) + f"com.metrolist.music.discover.v2.ui.NowPlayingVibeBar() // {MARK} player\n\n" + m.group(2) + m.group(3), src, count=1)
+
+# Hook 6 - MusicService.onCreate: queue guard (weird-settings rules) + neighbours mode + overnight-mix scheduling.
+def service(src):
+    m = re.search(r"override fun onCreate\(\)", src)
+    if not m: return None
+    n = re.compile(r"^([ \t]*)playerInitialized\.value = true[ \t]*$", re.M).search(src, m.end())
+    if not n or n.start() - m.end() > 8000: return None
+    line = f"\n{n.group(1)}runCatching {{ com.metrolist.music.discover.v2.V2Service.attach(this) }} // {MARK} service"
+    return src[:n.end()] + line + src[n.end():]
+
+edit("app/src/main/kotlin/com/metrolist/music/playback/MusicService.kt", music_service, "stats")
+edit("app/src/main/kotlin/com/metrolist/music/ui/screens/HomeScreen.kt", home_screen, "home")
+edit("app/src/main/kotlin/com/metrolist/music/utils/Updater.kt", updater, "updater")
+edit("app/src/main/kotlin/com/metrolist/music/ui/screens/NavigationBuilder.kt", navigation, "routes")
+edit("app/src/main/kotlin/com/metrolist/music/ui/player/Player.kt", player, "player")
+edit("app/src/main/kotlin/com/metrolist/music/playback/MusicService.kt", service, "service")
 if errors:
     for e in errors: print("::error::" + e)
     sys.exit(3)

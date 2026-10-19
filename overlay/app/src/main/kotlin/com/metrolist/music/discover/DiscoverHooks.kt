@@ -44,6 +44,7 @@ object DiscoverHooks {
                 val outcome = ProfileBuilder.outcome(e, History(emptyMap(), emptyList()), th.first, th.second, th.third)
                 val rec = store.rec(songId, ts)
                 store.addPlay(songId, ts, playedMs, durationMs, rec != null, outcome.name)
+                runCatching { com.metrolist.music.discover.v2.V2Engine.onPlayed(app, songId, playedMs, durationMs) } // v2: vibe self-correction
                 if (rec != null) {
                     val tuner = SelfTuner(DiscoverConfig().weights, DiscoverConfig().exploreRatio)
                     val state = TunerState.decode(store.get(DiscoverStore.K_TUNER)) ?: tuner.reset()

@@ -54,6 +54,7 @@ runs:
         [ -n "$UVC" ] && [ -n "$UVN" ] || { echo "::error::could not read upstream versionCode/versionName"; exit 1; }
         export DISCOVER_VERSION_CODE=$(( UVC * 10000 + BUILD_NUMBER ))
         export DISCOVER_VERSION_NAME="$UVN.$BUILD_NUMBER"
+        export DISCOVER_VERSION_SUFFIX="$(tr -d '[:space:]' < "$GITHUB_WORKSPACE/VERSION_SUFFIX" 2>/dev/null || true)"
         echo "versionCode $DISCOVER_VERSION_CODE, versionName $DISCOVER_VERSION_NAME"
         echo "base=$DISCOVER_VERSION_NAME" >> "$GITHUB_OUTPUT"
         ./gradlew --console=plain --warning-mode none -I "$GITHUB_WORKSPACE/ci/discover.init.gradle" \

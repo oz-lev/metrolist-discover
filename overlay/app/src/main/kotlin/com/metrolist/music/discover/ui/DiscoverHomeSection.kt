@@ -96,7 +96,13 @@ import kotlin.math.sin
 
 /** Called from HomeScreen's LazyColumn (the single UI hook). */
 fun discoverForYouSection(scope: LazyListScope) {
-    scope.item(key = "metrolist_discover_section") { DiscoverForYouSection() }
+    // v2: the new Home (mood chips, daily-mix hero, Discover row with % match, hub tiles). Toggle: Weird settings -> classic home.
+    scope.item(key = "metrolist_discover_section") {
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        val v by com.metrolist.music.discover.v2.V2Settings.version.collectAsStateWithLifecycle()
+        val v2 = remember(v) { com.metrolist.music.discover.v2.V2Settings.get(ctx).homeV2 }
+        if (v2) com.metrolist.music.discover.v2.ui.V2HomeSection() else DiscoverForYouSection()
+    }
 }
 
 private fun isHebrewUi(): Boolean = Locale.getDefault().language.let { it == "iw" || it == "he" }
@@ -184,7 +190,7 @@ fun DiscoverForYouSection() {
 }
 
 @Composable
-private fun reasonText(item: DiscoverItem): String = when (item.reason) {
+internal fun reasonText(item: DiscoverItem): String = when (item.reason) {
     Reason.FORGOTTEN_FAVORITE -> stringResource(R.string.discover_reason_forgotten)
     Reason.NEW_FROM_ARTIST -> stringResource(R.string.discover_reason_artist)
     Reason.SIMILAR_ARTIST -> stringResource(R.string.discover_reason_similar)
@@ -209,7 +215,7 @@ private fun DiscoverCard(item: DiscoverItem, onClick: () -> Unit) {
 }
 
 @Composable
-private fun MixCard(mix: MixBuilder.Mix, name: String, onClick: () -> Unit) {
+internal fun MixCard(mix: MixBuilder.Mix, name: String, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme
     Box(
         Modifier.size(156.dp).clip(RoundedCornerShape(20.dp))
@@ -232,7 +238,7 @@ private fun MixCard(mix: MixBuilder.Mix, name: String, onClick: () -> Unit) {
 
 /** The stats bubble: springs in, floats, pops with a small particle burst. Tap = pop, swipe = next fact. */
 @Composable
-private fun StatsBubble(fact: StatsFacts.Fact, onDismiss: () -> Unit, onNext: () -> Unit) {
+internal fun StatsBubble(fact: StatsFacts.Fact, onDismiss: () -> Unit, onNext: () -> Unit) {
     var popping by remember(fact) { mutableStateOf(false) }
     val scale = remember(fact) { Animatable(0.3f) }
     val alpha = remember(fact) { Animatable(0f) }
@@ -298,7 +304,7 @@ private fun StatsBubble(fact: StatsFacts.Fact, onDismiss: () -> Unit, onNext: ()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DiscoverSheet(state: DiscoverUiState, vm: DiscoverViewModel, onDismiss: () -> Unit) {
+internal fun DiscoverSheet(state: DiscoverUiState, vm: DiscoverViewModel, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp)) {
             Text(stringResource(R.string.discover_settings), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
