@@ -115,6 +115,8 @@ class V2Settings private constructor(private val store: DiscoverStore) {
     var blendName: String get() = store.get("v21.blendName").orEmpty(); set(v) = save("v21.blendName", v.take(24))
     // global (all profiles): the auto-switch schedule
     var autoSwitch: Boolean get() = store.rawGet("g.autoSwitch")?.toBooleanStrictOrNull() ?: false; set(v) { store.rawPut("g.autoSwitch", v.toString()); bump() }
+    /** global: the local daily-summary API for the journal app יומי (yomi/DailySummaryProvider), default ON */
+    var yomiShare: Boolean get() = store.rawGet("g.yomiShare")?.toBooleanStrictOrNull() ?: true; set(v) { store.rawPut("g.yomiShare", v.toString()); bump() }
     var autoRules: List<AutoRule> get() = AutoRule.decodeAll(store.rawGet("g.autoRules")); set(v) { store.rawPut("g.autoRules", AutoRule.encodeAll(v)); bump() }
 
     fun shape(): ShapeOptions = ShapeOptions(

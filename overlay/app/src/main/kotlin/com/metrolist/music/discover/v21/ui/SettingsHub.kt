@@ -176,6 +176,7 @@ fun SettingsHubScreen(onBack: () -> Unit, onNavigate: (String) -> Unit) {
             NavRow("${profile.emoji} פרופיל פעיל: ${profile.name}", "החלפה, יצירה, שכפול, מחיקה ומעבר אוטומטי לפי שעה") { onNavigate(V2Routes.PROFILES) }
         })
         add(SItem(g1, "מעבר אוטומטי בין פרופילים", "לפי יום ושעה (למשל עבודה א׳–ה׳ 9–17)") { Toggle("⏰ מעבר אוטומטי בין פרופילים", if (s.autoRules.isEmpty()) "הגדר לוח זמנים במסך הפרופילים" else "${s.autoRules.size} חוקים", s.autoSwitch) { s.autoSwitch = it } })
+        add(SItem(g1, "שיתוף סיכום יומי ליומי", "אפליקציית היומן יומי מקבלת סיכום האזנה יומי, רק בתוך הטלפון") { Toggle("📔 שיתוף סיכום יומי ליומי", "כמה שמעת, השיר והאמן המובילים, טופ 5 ומצב רוח. רק ליומי, בלי אינטרנט", s.yomiShare) { s.yomiShare = it } })
         add(SItem(g1, "מצב סודי", "שום השמעה לא נרשמת להיסטוריה וללמידה") {
             Toggle("🕵️ מצב סודי", "לא נרשם כלום: לא היסטוריה, לא למידה, לא סטטיסטיקות", s.secret) { s.secret = it; V21Profiles.applySecret(ctx, it) }
         })

@@ -14,6 +14,10 @@ on:
         description: Build and publish a release even if upstream did not change
         type: boolean
         default: false
+      build_number:
+        description: Override the build number (4th version part, e.g. 7 -> 13.7.0.7). Empty = this run's number. Must be higher than the last release's.
+        type: string
+        default: ""
 permissions:
   contents: write
   issues: write
@@ -60,7 +64,7 @@ jobs:
         uses: ./.github/actions/build-apk
         with:
           upstream-tag: ${{ needs.check.outputs.latest }}
-          build-number: ${{ github.run_number }}
+          build-number: ${{ inputs.build_number != '' && inputs.build_number || github.run_number }}
           keystore: ${{ secrets.KEYSTORE }}
           keystore-password: ${{ secrets.KEYSTORE_PASSWORD }}
           key-alias: ${{ secrets.KEY_ALIAS }}

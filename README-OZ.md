@@ -70,7 +70,9 @@ overlay/                             NEW files copied into a clean upstream chec
       V2Service.kt                   queue guard + neighbours mode (attached from MusicService.onCreate)
       V2Offline.kt                   overnight offline mix (JobScheduler job + Hilt entry point)
       ui/                            V2Home, MixesHub, NowPlaying (vibe bar), SearchLab, WeirdSettings, Profile, Routes
-  app/src/release/AndroidManifest.xml  merged into release builds only: declares the offline JobService (no permission)
+    yomi/DailySummaryProvider.kt     local daily-summary API for the journal app יומי (read-only exported ContentProvider)
+    engine/DailySummary.kt           its pure aggregation (tested in DailySummaryTest)
+  app/src/release/AndroidManifest.xml  merged into release builds only: offline JobService, widgets, the Yomi provider (no permission)
   app/src/main/res/{values,values-iw}/discover_strings.xml, drawable/discover_ic_*.xml
   app/src/test/...                   JUnit tests + discover/baseline.properties (evaluator gate)
 tools/apply-overlay.sh               copy overlay + insert hooks (fails if upstream ever ships a same-named file)
@@ -154,6 +156,44 @@ reads `/releases/latest`, which GitHub never points at a pre-release.
 - Real data, locally: `python3 tools/backup_to_tsv.py Metrolist_xxx.backup /tmp/me && kotlinc overlay/.../engine/*.kt tools/eval-cli/EvalCli.kt -include-runtime -d eval.jar && java -cp eval.jar EvalCliKt --tsv /tmp/me --top 20`
   (or on the phone: Discover sheet -> "Test on my history"). Personal data never goes to the repo or CI.
 - Updating the baseline after an intentional improvement: `java -cp eval.jar EvalCliKt --synthetic --write-baseline overlay/app/src/test/resources/discover/baseline.properties`.
+
+## Yomi daily-summary API (13.7.0.7+)
+A local, read-only API so Oz's journal app יומי (oz-lev/yomi) can read a daily listening summary on the phone. No network, no new permission.
+- Declared in `overlay/app/src/release/AndroidManifest.xml` (manifest merge, so **no new hook**):
+  `<provider android:name="com.metrolist.music.discover.yomi.DailySummaryProvider" android:authorities="${applicationId}.daily" android:exported="true"/>`
+  → authority **`com.metrolist.music.oz.daily`** in releases. Release builds only (debug builds have no provider).
+- URIs: `content://com.metrolist.music.oz.daily/day/{yyyy-MM-dd}` (1 row) and
+  `content://com.metrolist.music.oz.daily/range/{from}/{to}` (inclusive, one row per day, oldest first, at most 366 days).
+  Bad date / unknown path / backwards or too long range → `IllegalArgumentException`. insert/update/delete → `UnsupportedOperationException`.
+- Columns (every day in the range gets a row; a day without plays has 0s and NULLs):
+
+  | column | type | meaning |
+  |---|---|---|
+  | date | TEXT | `yyyy-MM-dd` (local) |
+  | minutes_listened | INTEGER | sum of `event.playTime`, minutes, rounded |
+  | plays | INTEGER | number of `event` rows that day |
+  | unique_tracks | INTEGER | distinct songs |
+  | top_track | TEXT/NULL | title of the most played song (ties: more listening time, then most recent) |
+  | top_artist | TEXT/NULL | first credited artist with most plays (ties: more time, then name) |
+  | top5_json | TEXT | JSON array, up to 5: `[{"title":"…","artist":"…","plays":3,"id":"<YouTube videoId>"}]`, `[]` when empty |
+  | first_play_time | TEXT/NULL | `HH:mm` local, start of the first play (its end minus its play time, clamped to 00:00) |
+  | last_play_time | TEXT/NULL | `HH:mm` local, end of the last play |
+  | mood_hint | TEXT/NULL | `energetic` / `calm` / `happy` / `melancholic` / `balanced` from the v2 VibeEstimator (listening-time weighted energy/valence, with the user's own vibe corrections) |
+  | top_track_id | TEXT/NULL | YouTube Music videoId of top_track (extra; `https://music.youtube.com/watch?v=<id>`) |
+
+  A projection may pick any subset; an unknown column → `IllegalArgumentException`. Cursor extras: `enabled` (boolean), `api_version` (1).
+- Local time: Metrolist writes `LocalDateTime.now()` into `event.timestamp` and stores it as UTC millis, so the stored value's UTC fields
+  are the phone's wall clock at the end of each playback session (`DayClock` convention). A play is counted on the day it ended.
+- Caller rule (no `<permission>`; the permission set stays identical): `query()` reads `Binder.getCallingUid()`; our own uid passes;
+  otherwise the verified `getCallingPackage()` must belong to that uid and be `com.metrolist.music.oz` or start with `com.oz.yomi`
+  → else `SecurityException`. Note: a name prefix is not a signature; any sideloaded app could call itself com.oz.yomi.*. Pinning Yomi's
+  signing-cert SHA-256 is the upgrade if that ever matters.
+- Toggle: Discover settings hub → פרופילים ופרטיות → "📔 שיתוף סיכום יומי ליומי" (global kv `g.yomiShare`, default ON).
+  OFF → every query returns an empty cursor with extras `enabled=false`.
+- No `<queries>` needed in Metrolist (apps that call our provider are visible to us automatically). The **reader** (Yomi, targetSdk 30+) needs
+  `<queries><provider android:authorities="com.metrolist.music.oz.daily" /></queries>` (or `<package android:name="com.metrolist.music.oz" />`),
+  otherwise `resolveContentProvider`/`query` sees nothing.
+- Release versioning: `sync.yml` takes an optional `build_number` input (e.g. 7 → 13.7.0.7 / versionCode 1530007); empty = the run number.
 
 ## Sync bot (`sync.yml`)
 Daily 03:17 UTC + manual (`force_release`). Reads the latest upstream release; if it differs from `UPSTREAM_TAG`: engine gate -> clean upstream tag + overlay + hooks -> Gradle unit tests + `assembleIzzyRelease` -> zipalign + apksigner with the repo's own key -> GitHub release `discover-<tag>-r<run>` -> commit the new `UPSTREAM_TAG`.
