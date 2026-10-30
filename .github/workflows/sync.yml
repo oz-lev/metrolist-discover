@@ -18,6 +18,10 @@ on:
         description: Override the build number (4th version part, e.g. 7 -> 13.7.0.7). Empty = this run's number. Must be higher than the last release's.
         type: string
         default: ""
+      prerelease:
+        description: Publish as a pre-release first (the in-app updater ignores it) so the APK can be checked; promote to latest afterwards
+        type: boolean
+        default: false
 permissions:
   contents: write
   issues: write
@@ -87,7 +91,8 @@ jobs:
           # optional hand-written notes for this line of releases (e.g. the v2 experimental feature list)
           if [ -f RELEASE_NOTES.md ]; then { cat RELEASE_NOTES.md; echo; echo "---"; echo; cat notes.md; } > notes2.md && mv notes2.md notes.md; fi
           # always a normal "latest" release: the in-app updater reads /releases/latest, which skips pre-releases
-          gh release create "v${V}" out/Metrolist-Discover.apk out/Metrolist.apk --title "${V}" --notes-file notes.md --latest
+          FLAG="--latest"; if [ "${{ inputs.prerelease }}" = "true" ]; then FLAG="--prerelease --latest=false"; fi
+          gh release create "v${V}" out/Metrolist-Discover.apk out/Metrolist.apk --title "${V}" --notes-file notes.md $FLAG
       - name: Record synced tag
         if: needs.check.outputs.latest != needs.check.outputs.current
         run: |
