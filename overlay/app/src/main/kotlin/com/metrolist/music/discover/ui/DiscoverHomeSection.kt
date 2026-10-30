@@ -5,6 +5,12 @@
  */
 package com.metrolist.music.discover.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -123,6 +129,7 @@ fun DiscoverForYouSection() {
     val state by vm.state.collectAsStateWithLifecycle()
     val playerConnection = LocalPlayerConnection.current ?: return
     var showSheet by remember { mutableStateOf(false) }
+    var notForMe by remember { mutableStateOf<DiscoverItem?>(null) }
     val title = stringResource(R.string.discover_title)
 
     fun play(list: List<TrackMeta>, start: Int, queueTitle: String) {
@@ -166,7 +173,7 @@ fun DiscoverForYouSection() {
             }
             LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 itemsIndexed(state.items, key = { _, it -> "d_" + it.track.id }) { i, item ->
-                    DiscoverCard(item) { play(state.items.map { it.track }, i, title) }
+                    DiscoverCard(item, onLongClick = { notForMe = item }) { play(state.items.map { it.track }, i, title) }
                 }
             }
         }
@@ -187,6 +194,30 @@ fun DiscoverForYouSection() {
 
     state.fact?.let { StatsBubble(it, onDismiss = vm::dismissFact, onNext = vm::nextFact) }
     if (showSheet) DiscoverSheet(state, vm) { showSheet = false }
+    notForMe?.let { item -> NotForMeDialog(item, onHide = { whole -> vm.hide(item, whole) }, onDismiss = { notForMe = null }) }
+}
+
+/** 13.7.0.8 "not for me": long-press a recommendation to hide the song, or the whole artist, from Discover. */
+@Composable
+fun NotForMeDialog(item: DiscoverItem, onHide: (wholeArtist: Boolean) -> Unit, onDismiss: () -> Unit) {
+    val artist = item.track.artistNames.firstOrNull { n -> n.any { it.isLetterOrDigit() } } ?: item.track.artistLabel
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.discover_not_for_me), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column {
+                Text(item.track.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
+                TextButton(onClick = { onHide(false); onDismiss() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.discover_hide_song), modifier = Modifier.fillMaxWidth(), maxLines = 2)
+                }
+                TextButton(onClick = { onHide(true); onDismiss() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.discover_hide_artist, artist), modifier = Modifier.fillMaxWidth(), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) } },
+    )
 }
 
 @Composable
@@ -196,12 +227,14 @@ internal fun reasonText(item: DiscoverItem): String = when (item.reason) {
     Reason.SIMILAR_ARTIST -> stringResource(R.string.discover_reason_similar)
     Reason.EXPLORE -> stringResource(R.string.discover_reason_explore)
     Reason.FITS_THIS_HOUR -> stringResource(R.string.discover_reason_hour)
+    Reason.STILL_NEW -> stringResource(R.string.discover_reason_still_new)
     Reason.BECAUSE_YOU_PLAY -> item.seed?.let { stringResource(R.string.discover_reason_because, it) } ?: stringResource(R.string.discover_reason_for_you)
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DiscoverCard(item: DiscoverItem, onClick: () -> Unit) {
-    Column(Modifier.width(144.dp).clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(4.dp)) {
+private fun DiscoverCard(item: DiscoverItem, onLongClick: () -> Unit, onClick: () -> Unit) {
+    Column(Modifier.width(144.dp).clip(RoundedCornerShape(16.dp)).combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(4.dp)) {
         AsyncImage(
             model = bigThumb(item.track.thumbnailUrl), contentDescription = null, contentScale = ContentScale.Crop,
             modifier = Modifier.size(136.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest),
@@ -230,7 +263,7 @@ internal fun MixCard(mix: MixBuilder.Mix, name: String, onClick: () -> Unit) {
                 }
             }
             Spacer(Modifier.weight(1f))
-            Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = c.onPrimaryContainer, maxLines = 2)
+            Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = c.onPrimaryContainer, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text("${mix.tracks.size}", style = MaterialTheme.typography.labelSmall, color = c.onPrimaryContainer)
         }
     }
@@ -324,9 +357,18 @@ internal fun DiscoverSheet(state: DiscoverUiState, vm: DiscoverViewModel, onDism
                 Text(stringResource(R.string.discover_bubble_toggle), Modifier.weight(1f))
                 Switch(checked = state.bubbleEnabled, onCheckedChange = vm::setBubble)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 12.dp)) {
-                OutlinedButton(onClick = vm::resetLearning) { Text(stringResource(R.string.discover_reset)) }
-                Button(onClick = vm::evaluate, enabled = !state.evaluating) { Text(stringResource(R.string.discover_evaluate)) }
+            // 13.7.0.8: stacked full-width buttons (side by side they clipped on a 320 dp screen)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                Button(onClick = vm::evaluate, enabled = !state.evaluating, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.discover_evaluate), textAlign = TextAlign.Center)
+                }
+                OutlinedButton(onClick = vm::resetLearning, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.discover_reset), textAlign = TextAlign.Center)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.discover_hidden_count, state.hiddenCount), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    if (state.hiddenCount > 0) TextButton(onClick = vm::clearHidden) { Text(stringResource(R.string.discover_hidden_clear)) }
+                }
             }
             if (state.evaluating) CircularProgressIndicator(Modifier.padding(12.dp))
             state.evaluation?.let { m ->

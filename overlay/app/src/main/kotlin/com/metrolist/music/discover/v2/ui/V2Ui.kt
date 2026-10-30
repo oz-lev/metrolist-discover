@@ -101,6 +101,10 @@ fun rememberTap(): () -> Unit {
     return remember(haptic) { { if (com.metrolist.music.discover.v2.V2Settings.get(ctx).haptics) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } }
 }
 
+/** 13.7.0.8: true on narrow phones (the 3" Jelly Star is 320 dp wide): tighter paddings, smaller covers. */
+@Composable
+fun isCompactScreen(): Boolean = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 360
+
 @Composable
 fun V2Rtl(content: @Composable () -> Unit) {
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) { content() }
@@ -156,7 +160,7 @@ fun V2Page(title: String, subtitle: String? = null, onBack: () -> Unit, content:
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
                         Box(
                             contentAlignment = Alignment.Center,
-                            modifier = Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onBack),
+                            modifier = Modifier.size(48.dp).clip(CircleShape).clickable(onClick = onBack),
                         ) { Text("→", fontSize = 22.sp, fontWeight = FontWeight.Bold) }
                         Spacer(Modifier.width(4.dp))
                         Column(Modifier.weight(1f)) {

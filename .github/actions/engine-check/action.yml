@@ -29,6 +29,6 @@ runs:
       shell: bash
       run: |
         K="$RUNNER_TEMP/k/kotlinc"
-        "$K/bin/kotlinc" -nowarn overlay/app/src/main/kotlin/com/metrolist/music/discover/engine/*.kt tools/eval-cli/EvalCli.kt -include-runtime -d "$RUNNER_TEMP/eval.jar"
+        "$K/bin/kotlinc" -nowarn overlay/app/src/main/kotlin/com/metrolist/music/discover/engine/*.kt tools/eval-cli/*.kt -include-runtime -d "$RUNNER_TEMP/eval.jar"
         java -cp "$RUNNER_TEMP/eval.jar" EvalCliKt --synthetic --baseline overlay/app/src/test/resources/discover/baseline.properties --check | tee eval-report.txt | tail -25
         echo '### Synthetic holdout evaluation' >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"; tail -25 eval-report.txt >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"

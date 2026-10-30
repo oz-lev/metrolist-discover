@@ -3,6 +3,7 @@
  */
 package com.metrolist.music.discover.v2
 
+import kotlinx.coroutines.cancel
 import android.app.job.JobInfo
 import android.app.job.JobParameters
 import android.app.job.JobScheduler
@@ -64,6 +65,12 @@ class V2OfflineJob : JobService() {
     override fun onStopJob(params: JobParameters): Boolean {
         job?.cancel()
         return true
+    }
+
+    // 13.7.0.8: the coroutine scope dies with the service (no leaked work after the system unbinds the job)
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
     }
 }
 

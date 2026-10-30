@@ -3,6 +3,7 @@
  */
 package com.metrolist.music.discover.v21.ui
 
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -152,7 +153,7 @@ fun V21HomeExtras(run: (String, suspend () -> BuiltMix) -> Unit) {
                 V2Card(Modifier.width(104.dp), brush = Brush.linearGradient(listOf(Color(t.c1), Color(t.c2))), onClick = { tap(); t.action() }) {
                     Column(Modifier.padding(12.dp)) {
                         Text(t.emoji, fontSize = 28.sp)
-                        Text(t.title, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                        Text(t.title, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }

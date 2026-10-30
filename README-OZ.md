@@ -157,6 +157,19 @@ reads `/releases/latest`, which GitHub never points at a pre-release.
   (or on the phone: Discover sheet -> "Test on my history"). Personal data never goes to the repo or CI.
 - Updating the baseline after an intentional improvement: `java -cp eval.jar EvalCliKt --synthetic --write-baseline overlay/app/src/test/resources/discover/baseline.properties`.
 
+## 13.7.0.8 ranking refinements (measured)
+- Rolling list report: `java -cp eval.jar EvalCliKt --tsv DIR --report` (12 weekly cuts, 7-day holdout each) measures the FINAL Discover list (recommend(), n=40):
+  hit = share of the list played (not skipped) in the next week, newHit = of those never heard before, skippedPick = list songs only skipped,
+  novelty = never heard or silent > forgottenAfterDays, artists/n, maxArtist, dominant = picks from an artist > 15% of the last days.
+  `--grid2` compares configs, `--diag` prints aggregate hit rates per source/feature bucket, `--dump F` writes per-candidate features (no ids) for offline fitting. Local only.
+- Changes (all knobs in DiscoverConfig): "still new to you" (first heard < 21 d, <= 2 plays, never skipped -> novelty floor 0.6, reason STILL_NEW);
+  repeat-artist fatigue starts at 10% share with slope 3 (was 15% / 2); barely-played library tracks prior 0.2 (was 0.35: least replayed source on real data);
+  recent artist-skip signal implemented but OFF (recentSkipWeight 0: it lowered ALL recall on real data).
+- One real history (a private local backup, never in the repo or CI), averaged over 12 cuts: list hit 0.060 -> 0.079, skippedPick 0.004 -> 0.002, dominant 0.002 -> 0.000,
+  novelty 0.967 -> 0.912, artists/n 1.0 -> 1.0, ALL recall@20 0.062 -> 0.062, NEW list recall@100 0.025 -> 0.025. Synthetic gate passes (baseline unchanged).
+- "Not for me": long-press a Discover card -> hide the song or the main artist (kv discover.hiddenSongs / discover.hiddenArtists, per profile, capped 1000/300),
+  filtered from candidates on refresh; a hide of a recommended song updates the self-tuner like a skip. Count + "show again" in the Discover sheet.
+
 ## Yomi daily-summary API (13.7.0.7+)
 A local, read-only API so Oz's journal app יומי (oz-lev/yomi) can read a daily listening summary on the phone. No network, no new permission.
 - Declared in `overlay/app/src/release/AndroidManifest.xml` (manifest merge, so **no new hook**):

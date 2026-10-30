@@ -3,6 +3,7 @@
  */
 package com.metrolist.music.discover.v21.ui
 
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -131,7 +132,7 @@ private fun ThemeCard(t: DTheme, selected: Boolean, modifier: Modifier, onClick:
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(t.emoji, fontSize = 22.sp)
                 Spacer(Modifier.width(6.dp))
-                Text(t.he, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                Text(t.he, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.height(10.dp))
             // a tiny fake screen: hero + chips + nav dots

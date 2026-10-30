@@ -3,6 +3,9 @@
  */
 package com.metrolist.music.discover.v2.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import com.metrolist.music.discover.ui.NotForMeDialog
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -82,6 +85,7 @@ fun V2HomeSection() {
     var match by remember { mutableStateOf(HomeCache.match) }
     var busy by remember { mutableStateOf<String?>(null) }
     var showSheet by remember { mutableStateOf(false) }
+    var notForMe by remember { mutableStateOf<DiscoverItem?>(null) }
 
     LaunchedEffect(version) {
         if (daily == null || System.currentTimeMillis() - HomeCache.builtAt > 30 * 60_000L || version > 0) {
@@ -110,7 +114,8 @@ fun V2HomeSection() {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp)) {
                 Column(Modifier.weight(1f)) {
                     Text("$hello${settings.greetingName.takeIf { it.isNotBlank() }?.let { ", $it" } ?: ""} 👋",
-                        style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+                        style = if (isCompactScreen()) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text("מה בא לך לשמוע?", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 RoundIcon("🎨") { nav.navigate(V2Routes.THEME) }
@@ -170,7 +175,8 @@ fun V2HomeSection() {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 14.dp)) {
                 Column(Modifier.weight(1f)) {
                     Text("גילוי בשבילך ✨", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
-                    Text("שירים חדשים שהמנוע חושב שתאהב", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("שירים חדשים שהמנוע חושב שתאהב · לחיצה ארוכה = לא בשבילי", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 if (state.loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 else RoundIcon("🔄") { vm.refresh() }
@@ -181,7 +187,7 @@ fun V2HomeSection() {
             } else {
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     itemsIndexed(state.items, key = { _, it -> "v2d_" + it.track.id }) { i, item ->
-                        DiscoverTile(item, match[item.track.id]) { player.playTracks(state.items.map { it.track }, "גילוי בשבילך", i) }
+                        DiscoverTile(item, match[item.track.id], onLongClick = { notForMe = item }) { player.playTracks(state.items.map { it.track }, "גילוי בשבילך", i) }
                     }
                 }
             }
@@ -200,12 +206,13 @@ fun V2HomeSection() {
 
     state.fact?.let { StatsBubble(it, onDismiss = vm::dismissFact, onNext = vm::nextFact) }
     if (showSheet) DiscoverSheet(state, vm) { showSheet = false }
+    notForMe?.let { item -> NotForMeDialog(item, onHide = { whole -> vm.hide(item, whole) }, onDismiss = { notForMe = null }) }
     busy?.let { BusyOverlay(it) }
 }
 
 @Composable
 private fun RoundIcon(emoji: String, onClick: () -> Unit) {
-    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onClick)) { Text(emoji, fontSize = 22.sp) }
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp).clip(CircleShape).clickable(onClick = onClick)) { Text(emoji, fontSize = 22.sp) }
 }
 
 @Composable
@@ -218,10 +225,12 @@ private fun HeroCard(mix: BuiltMix?, onPlay: () -> Unit) {
         start = androidx.compose.ui.geometry.Offset(0f + 400f * shift, 0f), end = androidx.compose.ui.geometry.Offset(900f, 700f - 300f * shift),
     )
     V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), brush = brush, onClick = onPlay) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(18.dp)) {
+        val compact = isCompactScreen()
+        val cover = if (compact) 46.dp else 58.dp
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(if (compact) 14.dp else 18.dp)) {
             Column(Modifier.weight(1f)) {
                 Text("✨ נבנה במיוחד בשבילך", color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.labelMedium)
-                Text(mix?.title ?: "המיקס היומי שלך", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(mix?.title ?: "המיקס היומי שלך", color = Color.White, fontSize = if (compact) 20.sp else 24.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 val sub = mix?.let { m ->
                     val min = m.tracks.sumOf { t -> t.durationSec.coerceAtLeast(0) } / 60
                     "${m.tracks.size} שירים · $min דק׳ · " + m.tracks.take(3).joinToString(", ") { it.artistLabel.substringBefore(",") }
@@ -237,12 +246,12 @@ private fun HeroCard(mix: BuiltMix?, onPlay: () -> Unit) {
             val t = mix?.tracks.orEmpty()
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Art(t.getOrNull(0)?.thumbnailUrl, t.getOrNull(0)?.id ?: "a", Modifier.size(58.dp), 12)
-                    Art(t.getOrNull(1)?.thumbnailUrl, t.getOrNull(1)?.id ?: "b", Modifier.size(58.dp), 12)
+                    Art(t.getOrNull(0)?.thumbnailUrl, t.getOrNull(0)?.id ?: "a", Modifier.size(cover), 12)
+                    Art(t.getOrNull(1)?.thumbnailUrl, t.getOrNull(1)?.id ?: "b", Modifier.size(cover), 12)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Art(t.getOrNull(2)?.thumbnailUrl, t.getOrNull(2)?.id ?: "c", Modifier.size(58.dp), 12)
-                    Art(t.getOrNull(3)?.thumbnailUrl, t.getOrNull(3)?.id ?: "d", Modifier.size(58.dp), 12)
+                    Art(t.getOrNull(2)?.thumbnailUrl, t.getOrNull(2)?.id ?: "c", Modifier.size(cover), 12)
+                    Art(t.getOrNull(3)?.thumbnailUrl, t.getOrNull(3)?.id ?: "d", Modifier.size(cover), 12)
                 }
             }
         }
@@ -261,8 +270,10 @@ private fun Tile(emoji: String, title: String, sub: String, modifier: Modifier, 
 }
 
 @Composable
-private fun DiscoverTile(item: DiscoverItem, match: Int?, onClick: () -> Unit) {
-    Column(Modifier.width(148.dp).clip(RoundedCornerShape(18.dp)).clickable(onClick = onClick)) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun DiscoverTile(item: DiscoverItem, match: Int?, onLongClick: () -> Unit, onClick: () -> Unit) {
+    val tileW = if (isCompactScreen()) 132.dp else 148.dp
+    Column(Modifier.width(tileW).clip(RoundedCornerShape(18.dp)).combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
         Box {
             Art(item.track.thumbnailUrl, item.track.id, Modifier.fillMaxWidth().aspectRatio(1f), 18)
             if (match != null) {

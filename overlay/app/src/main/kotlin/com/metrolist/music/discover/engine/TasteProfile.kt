@@ -42,6 +42,10 @@ class TasteProfile(
     val recentArtistShare: Map<String, Double>,
     val playCount: Int,
     val config: DiscoverConfig,
+    /** 13.7.0.8: first non-skipped play of each track (a song first heard a few days ago is still "new to you"). */
+    val firstPlayed: Map<String, Long> = emptyMap(),
+    /** 13.7.0.8: recent (short half-life) skip excess per main artist, 0 = no recent skips beyond the user's norm. */
+    val artistRecentSkip: Map<String, Double> = emptyMap(),
 ) {
     val isColdStart: Boolean get() = playCount < config.minPlaysForProfile
 
@@ -205,6 +209,8 @@ object ProfileBuilder {
         val recentShare = HashMap<String, Double>()
         val prevPlay = HashMap<String, Long>()
         var recentTotal = 0.0
+        val firstPlayed = HashMap<String, Long>()
+        val aSkipShort = HashMap<String, Double>(); val aPlayShort = HashMap<String, Double>()
 
         fun add(trackId: String, value: Double, ts: Long?) {
             val t = history.tracks[trackId]
@@ -244,6 +250,12 @@ object ProfileBuilder {
                 if (o == Outcome.SKIP) aSkip.merge(main, 1, Int::plus)
             }
             val age = (nowMs - e.timestampMs) / TasteProfile.DAY_MS
+            if (main != null) {
+                val ds = TasteProfile.decay(age, cfg.recentSkipHalfLifeDays)
+                aPlayShort.merge(main, ds, Double::plus)
+                if (o == Outcome.SKIP) aSkipShort.merge(main, ds, Double::plus)
+            }
+            if (o != Outcome.SKIP) firstPlayed.putIfAbsent(e.trackId, e.timestampMs)
             if (o == Outcome.SKIP) tSkips.merge(e.trackId, TasteProfile.decay(age, cfg.longHalfLifeDays), Double::plus)
             else {
                 lastPlayed[e.trackId] = e.timestampMs
@@ -272,10 +284,18 @@ object ProfileBuilder {
             val k = 5.0 // shrink toward the user's own skip rate
             skipRate[a] = ((aSkip[a] ?: 0) + k * th.userSkipRate) / (n + k)
         }
+        val recentSkip = HashMap<String, Double>()
+        for ((a, n) in aPlayShort) {
+            // shrunk toward the user's own skip rate (2 virtual plays), then excess over that rate
+            val r = ((aSkipShort[a] ?: 0.0) + 2.0 * th.userSkipRate) / (n + 2.0)
+            val ex = ((r - th.userSkipRate) / (th.userSkipRate + 0.1)).coerceIn(0.0, 1.5)
+            if (ex > 0) recentSkip[a] = ex
+        }
         if (recentTotal > 0) for (k in recentShare.keys.toList()) recentShare[k] = recentShare[k]!! / recentTotal
         return TasteProfile(
             nowMs, th, aShort, aLong, album, track, trackS, tSkips, skipRate, aPlays, lastPlayed, tCount,
             hours, global, recentShare, history.plays.count { it.timestampMs <= nowMs }, cfg,
+            firstPlayed, recentSkip,
         )
     }
 }

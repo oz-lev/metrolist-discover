@@ -112,9 +112,9 @@ fun ReplayScreen(onBack: () -> Unit) {
                         }
                     }
                     Row(Modifier.fillMaxWidth()) {
-                        Text("00", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, modifier = Modifier.weight(1f))
-                        Text("12", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, modifier = Modifier.weight(1f))
-                        Text("23", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp)
+                        Text("00", color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        Text("12", color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        Text("23", color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp)
                     }
                     Text("השעה הכי חמה שלך: ${"%02d".format(peak)}:00", color = Color.White, fontWeight = FontWeight.Bold)
                 }

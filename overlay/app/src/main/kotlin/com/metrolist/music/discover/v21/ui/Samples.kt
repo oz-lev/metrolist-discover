@@ -104,7 +104,7 @@ fun SamplesScreen(onBack: () -> Unit) {
                             }
                             Spacer(Modifier.height(20.dp))
                             Text(t.title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
-                            Text(t.artistLabel, color = Color.White.copy(alpha = 0.8f), fontSize = 18.sp, maxLines = 1, textAlign = TextAlign.Center)
+                            Text(t.artistLabel, color = Color.White.copy(alpha = 0.8f), fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
                             Spacer(Modifier.height(18.dp))
                             if (page == pager.currentPage) LinearProgressIndicator(progress = { tick }, modifier = Modifier.fillMaxWidth(0.6f))
                             Spacer(Modifier.height(18.dp))

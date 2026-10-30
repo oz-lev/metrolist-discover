@@ -38,6 +38,7 @@ data class DiscoverUiState(
     val bubbleEnabled: Boolean = true,
     val evaluating: Boolean = false,
     val evaluation: List<Evaluator.Metric>? = null,
+    val hiddenCount: Int = 0,
 )
 
 @HiltViewModel
@@ -91,6 +92,20 @@ class DiscoverViewModel @Inject constructor(
         }
     }
 
+    /** 13.7.0.8 "not for me": gone from the row at once; stored and learned from in the background. */
+    fun hide(item: DiscoverItem, wholeArtist: Boolean) {
+        val s = _state.value
+        _state.value = s.copy(items = s.items.filter { it.track.id != item.track.id && !(wholeArtist && it.track.mainArtist == item.track.mainArtist) })
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.hide(item.track, wholeArtist) } }
+    }
+
+    fun clearHidden() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { repo.clearHidden() } }
+            loadStats()
+        }
+    }
+
     fun dismissFact() { _state.value = _state.value.copy(fact = null) }
 
     fun nextFact() {
@@ -105,7 +120,8 @@ class DiscoverViewModel @Inject constructor(
     fun loadStats() {
         viewModelScope.launch {
             val (c, t) = withContext(Dispatchers.IO) { repo.counters() to repo.tunerState() }
-            _state.value = _state.value.copy(counters = c, tuner = t, exploreRatio = withContext(Dispatchers.IO) { repo.exploreRatio() })
+            val hidden = withContext(Dispatchers.IO) { runCatching { repo.hiddenCount() }.getOrDefault(0) }
+            _state.value = _state.value.copy(counters = c, tuner = t, hiddenCount = hidden, exploreRatio = withContext(Dispatchers.IO) { repo.exploreRatio() })
         }
     }
 

@@ -3,6 +3,7 @@
  */
 package com.metrolist.music.discover.v21.ui
 
+import androidx.compose.ui.text.style.TextOverflow
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -124,10 +125,10 @@ fun KaraokeScreen(onBack: () -> Unit) {
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(cs.primary.copy(alpha = 0.35f), cs.background, cs.background)))) {
             Column(Modifier.fillMaxSize().padding(WindowInsets.systemBars.asPaddingValues())) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(8.dp)) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onBack)) { Text("→", fontSize = 22.sp, fontWeight = FontWeight.Bold) }
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp).clip(CircleShape).clickable(onClick = onBack)) { Text("→", fontSize = 22.sp, fontWeight = FontWeight.Bold) }
                     Column(Modifier.weight(1f)) {
                         Text("🎤 קריוקי", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
-                        Text(md?.let { "${it.title} · ${it.artists.joinToString { a -> a.name }}" } ?: "", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, maxLines = 1)
+                        Text(md?.let { "${it.title} · ${it.artists.joinToString { a -> a.name }}" } ?: "", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (l != null && cur >= 0) Box(contentAlignment = Alignment.Center, modifier = Modifier.clip(RoundedCornerShape(50)).background(cs.primary).clickable {
                         shareLyricCard(ctx, l[cur].text, md?.title.orEmpty(), md?.artists?.joinToString { it.name }.orEmpty(), cs.primary.toArgb(), cs.secondary.toArgb(), cs.tertiary.toArgb())

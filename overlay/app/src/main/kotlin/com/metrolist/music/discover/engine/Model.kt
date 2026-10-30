@@ -79,7 +79,9 @@ data class Candidate(
 
 enum class Slot { EXPLOIT, EXPLORE }
 
-enum class Reason { BECAUSE_YOU_PLAY, FORGOTTEN_FAVORITE, NEW_FROM_ARTIST, SIMILAR_ARTIST, EXPLORE, FITS_THIS_HOUR }
+enum class Reason { BECAUSE_YOU_PLAY, FORGOTTEN_FAVORITE, NEW_FROM_ARTIST, SIMILAR_ARTIST, EXPLORE, FITS_THIS_HOUR,
+    /** 13.7.0.8: a song first heard a few days ago, not yet a habit ("still new to you"). */
+    STILL_NEW }
 
 /** The feature values a score was built from; also what the self-tuner learns on. */
 data class Features(

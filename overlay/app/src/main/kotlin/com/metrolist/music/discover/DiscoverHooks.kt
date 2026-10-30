@@ -31,6 +31,7 @@ object DiscoverHooks {
     @JvmStatic
     fun onPlaybackStats(context: Context, database: MusicDatabase, mediaItem: MediaItem, playedMs: Long, historyPaused: Boolean) {
         if (historyPaused || playedMs <= 0) return
+        if (mediaItem.mediaId.isBlank()) return // 13.7.0.8: items without an id (local/unknown media) are not recorded
         val songId = mediaItem.mediaId
         val durSec = runCatching { mediaItem.metadata?.duration ?: -1 }.getOrDefault(-1)
         val ts = nowTs()

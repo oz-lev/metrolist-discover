@@ -84,6 +84,10 @@ fun main(args: Array<String>) {
     }
     val dir = File(arg("--tsv") ?: run { println("need --synthetic or --tsv DIR"); exitProcess(1) })
     val h = loadTsv(dir)
+    arg("--dump")?.let { poolDump(h, engine, it); return }
+    if ("--grid2" in args) { reportGrid(h); return }
+    if ("--diag" in args) { poolDiag(h, engine); return }
+    if ("--report" in args) { println("AVG   " + fmt(listReport(h, engine))); return }
     val holdout = arg("--holdout")?.toDouble() ?: 14.0
     if ("--grid" in args) {
         // tune on the 14 days BEFORE the test window, then report the test window: no peeking.

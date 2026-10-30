@@ -185,7 +185,7 @@ private fun ProfileDialog(p: DProfile?, onDismiss: () -> Unit, onSave: (String, 
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         items(PROFILE_EMOJIS.size) { i ->
                             val e = PROFILE_EMOJIS[i]
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(40.dp).clip(CircleShape)
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp).clip(CircleShape)
                                 .background(if (e == emoji) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest).clickable { emoji = e }) { Text(e, fontSize = 20.sp) }
                         }
                     }
@@ -193,7 +193,7 @@ private fun ProfileDialog(p: DProfile?, onDismiss: () -> Unit, onSave: (String, 
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(PROFILE_COLORS.size) { i ->
                             val c = PROFILE_COLORS[i]
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(34.dp).clip(CircleShape).background(Color(c)).clickable { color = c }) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp).clip(CircleShape).background(Color(c)).clickable { color = c }) {
                                 if (c == color) Text("✓", color = Color.White, fontWeight = FontWeight.Black)
                             }
                         }

@@ -64,4 +64,19 @@ data class DiscoverConfig(
     val listSize: Int = 30,
     val seedRelatedDecay: Double = 0.6, // a related artist/track inherits this share of its seed's affinity
     val exploreNoise: Double = 0.15,
+    // --- 13.7.0.8 ranking refinements (measured on a real history, see README-OZ.md "13.7.0.8") ---
+    /** A track first heard less than this many days ago, played at most twice and never skipped, still counts as new. */
+    val freshDays: Double = 21.0,
+    /** Novelty floor for such a "still new to you" track (0 = off, the pre-13.7.0.8 behaviour). */
+    val freshNovelty: Double = 0.6,
+    /** Repeat-artist fatigue: an artist above this share of the last days' listening is pushed down... */
+    val fatigueStart: Double = 0.10,
+    /** ...by this much per unit of share above [fatigueStart]. */
+    val fatigueSlope: Double = 3.0,
+    /** Half-life of the "you skipped this artist lately" signal. */
+    val recentSkipHalfLifeDays: Double = 7.0,
+    /** Weight of the recent artist-skip excess inside the skip feature (0 = off). */
+    val recentSkipWeight: Double = 0.0, // measured: no gain on a real history (kept as a knob, off)
+    /** Source prior of a barely-played library/playlist track (was 0.35: on a real history these were the least replayed candidates). */
+    val libraryPrior: Double = 0.2,
 )

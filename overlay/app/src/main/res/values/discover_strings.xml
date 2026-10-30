@@ -25,4 +25,11 @@
     <string name="discover_reason_hour">Fits this hour</string>
     <string name="discover_reason_because">Because you play %1$s</string>
     <string name="discover_reason_for_you">For you</string>
+    <!-- 13.7.0.8 -->
+    <string name="discover_reason_still_new">Still new to you</string>
+    <string name="discover_not_for_me">Not for me?</string>
+    <string name="discover_hide_song">Hide this song from Discover</string>
+    <string name="discover_hide_artist">Hide %1$s from Discover</string>
+    <string name="discover_hidden_count">Hidden from Discover: %1$d</string>
+    <string name="discover_hidden_clear">Show again</string>
 </resources>

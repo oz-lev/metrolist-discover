@@ -33,19 +33,21 @@ class DiscoverEngine(val config: DiscoverConfig = DiscoverConfig()) {
         val tod = p.hourFit(artists.firstOrNull()?.takeIf { p.artistPlays.containsKey(it) } ?: c.seedArtistId, hourSlot)
 
         val since = p.daysSince(t.id)
-        val novelty = if (since == null) 1.0 else 1.0 - TasteProfile.decay(since, p.thresholds.repeatGapDays * 2)
+        var novelty = if (since == null) 1.0 else 1.0 - TasteProfile.decay(since, p.thresholds.repeatGapDays * 2)
+        if (since != null && config.freshNovelty > 0 && isStillNew(t.id, p)) novelty = max(novelty, config.freshNovelty)
 
         val trackSkip = p.trackSkipExcess(t.id)
         val artistSkip = artists.firstOrNull()?.let { p.artistSkipRate[it] }?.let {
             ((it - p.thresholds.userSkipRate) / (p.thresholds.userSkipRate + 0.05)).coerceIn(0.0, 1.5)
         } ?: 0.0
-        val skip = trackSkip + 0.5 * artistSkip
+        val recentArtistSkip = artists.firstOrNull()?.let { p.artistRecentSkip[it] } ?: 0.0
+        val skip = trackSkip + 0.5 * artistSkip + config.recentSkipWeight * recentArtistSkip
 
         // An artist that already dominates the last days gets a mild push-down so the list widens the taste.
         val share = artists.firstOrNull()?.let { p.recentArtistShare[it] } ?: 0.0
-        val saturation = max(0.0, share - 0.15) * 2.0
+        val saturation = max(0.0, share - config.fatigueStart) * config.fatigueSlope
 
-        val src = c.sources.maxOfOrNull { it.prior } ?: 0.0
+        val src = c.sources.maxOfOrNull { if (it == CandidateSource.LIBRARY) config.libraryPrior else it.prior } ?: 0.0
         val srcBonus = min(0.3, 0.1 * (c.sources.size - 1))
         return Features(sim, tod, novelty, skip, overRep + saturation, src + srcBonus)
     }
@@ -123,6 +125,14 @@ class DiscoverEngine(val config: DiscoverConfig = DiscoverConfig()) {
         return noSameArtistTwice(picked)
     }
 
+    /** First heard less than [DiscoverConfig.freshDays] ago, at most two real plays, never skipped. */
+    fun isStillNew(trackId: String, p: TasteProfile): Boolean {
+        if (config.freshNovelty <= 0) return false
+        val first = p.firstPlayed[trackId] ?: return false
+        return (p.nowMs - first) / TasteProfile.DAY_MS < config.freshDays &&
+            (p.trackPlayCount[trackId] ?: 0) in 1..2 && (p.trackSkips[trackId] ?: 0.0) == 0.0
+    }
+
     private fun familiarityCut(p: TasteProfile): Double {
         val v = p.artistLong.keys.map { p.longFamiliarity(it) }.filter { it > 0 }.sorted()
         return if (v.isEmpty()) 0.1 else TasteProfile.quantile(v, 0.5)
@@ -131,6 +141,7 @@ class DiscoverEngine(val config: DiscoverConfig = DiscoverConfig()) {
     private fun reasonFor(c: Candidate, p: TasteProfile, f: Features): Reason = when {
         CandidateSource.FORGOTTEN in c.sources -> Reason.FORGOTTEN_FAVORITE
         CandidateSource.EXPLORE in c.sources -> Reason.EXPLORE
+        isStillNew(c.track.id, p) -> Reason.STILL_NEW
         f.timeOfDay > 0.5 -> Reason.FITS_THIS_HOUR
         p.trackPlayCount.containsKey(c.track.id) -> Reason.BECAUSE_YOU_PLAY
         p.artistAffinity(c.track.mainArtist) > 0.3 -> Reason.NEW_FROM_ARTIST

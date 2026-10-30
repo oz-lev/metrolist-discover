@@ -52,6 +52,27 @@ class DiscoverRepository(private val context: Context, private val database: Mus
     private val tuner = SelfTuner(config.weights, config.exploreRatio)
 
     fun tunerState(): TunerState = TunerState.decode(store.get(DiscoverStore.K_TUNER)) ?: tuner.reset()
+    // ---------------------------------------------------------------- 13.7.0.8 "not for me"
+    private fun readSet(k: String): LinkedHashSet<String> =
+        store.get(k)?.split('\n')?.filterTo(LinkedHashSet()) { it.isNotBlank() } ?: LinkedHashSet()
+    fun hiddenSongs(): Set<String> = readSet(K_HIDDEN_SONGS)
+    fun hiddenArtists(): Set<String> = readSet(K_HIDDEN_ARTISTS)
+    fun hiddenCount(): Int = hiddenSongs().size + hiddenArtists().size
+    fun clearHidden() { store.put(K_HIDDEN_SONGS, null); store.put(K_HIDDEN_ARTISTS, null) }
+
+    /** Hides a song (or its whole main artist) from Discover; on a song Discover recommended it also teaches the self-tuner like a skip. */
+    fun hide(track: TrackMeta, wholeArtist: Boolean) {
+        if (wholeArtist) store.put(K_HIDDEN_ARTISTS, (readSet(K_HIDDEN_ARTISTS) + track.mainArtist).toList().takeLast(300).joinToString("\n"))
+        else store.put(K_HIDDEN_SONGS, (readSet(K_HIDDEN_SONGS) + track.id).toList().takeLast(1000).joinToString("\n"))
+        runCatching {
+            store.rec(track.id, DiscoverHooks.nowTs())?.let { rec ->
+                store.put(DiscoverStore.K_TUNER, tuner.update(tunerState(), rec.second, rec.first, tuner.reward(Outcome.SKIP, false)).encode())
+            }
+        }
+        val left = cached().filter { it.track.id != track.id && !(wholeArtist && it.track.mainArtist == track.mainArtist) }
+        store.put(DiscoverStore.K_CACHE, encode(left))
+    }
+
     fun resetLearning() { store.put(DiscoverStore.K_TUNER, tuner.reset().encode()); store.put(DiscoverStore.K_LIKE_AWARDED, "") }
     fun exploreRatio(): Double = tuner.exploreRatio(tunerState())
 
@@ -114,7 +135,9 @@ class DiscoverRepository(private val context: Context, private val database: Mus
         store.put(DiscoverStore.K_THRESHOLDS, "${th.skipFraction},${th.skipSeconds},${th.fullFraction}")
         awardLikes(history)
         if (profile.isColdStart) return@withContext Result(emptyList(), true)
-        val candidates = CandidateBuilder.offline(history, profile) + (if (online) onlineCandidates(history, profile) else emptyList())
+        val hiddenS = hiddenSongs(); val hiddenA = hiddenArtists()
+        val candidates = (CandidateBuilder.offline(history, profile) + (if (online) onlineCandidates(history, profile) else emptyList()))
+            .filter { it.track.id !in hiddenS && it.track.mainArtist !in hiddenA }
         val recsAll = engine.recommend(history, candidates, now, n = config.listSize + 10, weights = weights,
             exploreRatio = v2.effectiveExplore(tuner.exploreRatio(state)), profile = profile)
         // v2 rules (day/hour blocks, < 3 min, no remix/live, turtle mode, max Mizrahi %) apply to Discover too
@@ -265,6 +288,9 @@ class DiscoverRepository(private val context: Context, private val database: Mus
     }
 
     companion object {
+        const val K_HIDDEN_SONGS = "discover.hiddenSongs"
+        const val K_HIDDEN_ARTISTS = "discover.hiddenArtists"
+
         /** (skipFraction, skipSeconds, fullFraction) as last computed from the user's data, or the defaults. */
         fun thresholds(store: DiscoverStore): Triple<Double, Double, Double> =
             store.get(DiscoverStore.K_THRESHOLDS)?.split(",")?.mapNotNull { it.toDoubleOrNull() }?.takeIf { it.size == 3 }
