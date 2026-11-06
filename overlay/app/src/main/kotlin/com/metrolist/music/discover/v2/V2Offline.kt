@@ -76,7 +76,8 @@ class V2OfflineJob : JobService() {
 
 object V2Offline {
     private const val JOB_ID = 0x0D15C0
-    const val SIZE = 25
+    /** 13.7.0.9: up to 100 songs a night (50 when the main mix is set to 50); last night's unkept songs are removed */
+    const val SIZE = 100
 
     fun schedule(ctx: Context) {
         runCatching {
@@ -106,7 +107,8 @@ object V2Offline {
         // DownloadManager lives on the main looper: create / touch it there
         val dl = withContext(Dispatchers.Main) { ep.downloadUtil() }
         val set = V2Settings.get(ctx)
-        val mix = V2Engine.daily(ctx, db).tracks.take(SIZE)
+        val n = minOf(SIZE, set.offlineSize)
+        val mix = V2Engine.daily(ctx, db, sizeOverride = n).tracks.take(n)
         if (mix.isEmpty()) return
         // tidy last night's batch: remove what was never liked / added to the library
         val keep = mix.map { it.id }.toSet()

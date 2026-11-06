@@ -113,6 +113,19 @@ class V2Settings private constructor(private val store: DiscoverStore) {
     var dailyGoalMin: Int get() = i("v21.goal", 30); set(v) = save("v21.goal", v.coerceIn(0, 240))
     var jumpBack: Boolean get() = b("v21.jumpBack", true); set(v) = save("v21.jumpBack", v)
     var blendName: String get() = store.get("v21.blendName").orEmpty(); set(v) = save("v21.blendName", v.take(24))
+    // 13.7.0.9: the main mix
+    /** 0 = endless (the queue grows by itself near its end), else 50 or 100 songs */
+    var mixLength: Int get() = i("v21.mixLen", 0); set(v) = save("v21.mixLen", if (v == 50 || v == 100) v else 0)
+    /** share of never-heard songs in the main mix, 0..0.6 (0.3 = 70% familiar / 30% new) */
+    var mixNewShare: Double get() = d("v21.mixNew", 0.3); set(v) = save("v21.mixNew", v.coerceIn(0.0, 0.6))
+    /** an early skip / a full listen re-ranks the rest of the playing mix right away */
+    var liveLearning: Boolean get() = b("v21.liveLearn", true); set(v) = save("v21.liveLearn", v)
+    /** order the main mix as DJ energy waves instead of raw rank */
+    var djOrder: Boolean get() = b("v21.djOrder", true); set(v) = save("v21.djOrder", v)
+    /** fetch related / radio songs online for the main mix (more new songs than the library alone) */
+    var onlineNew: Boolean get() = b("v21.onlineNew", true); set(v) = save("v21.onlineNew", v)
+    /** offline nightly batch size: follows the mix length (endless -> 100) */
+    val offlineSize: Int get() = if (mixLength == 50) 50 else 100
     // global (all profiles): the auto-switch schedule
     var autoSwitch: Boolean get() = store.rawGet("g.autoSwitch")?.toBooleanStrictOrNull() ?: false; set(v) { store.rawPut("g.autoSwitch", v.toString()); bump() }
     /** global: the local daily-summary API for the journal app יומי (yomi/DailySummaryProvider), default ON */
@@ -150,7 +163,8 @@ class V2Settings private constructor(private val store: DiscoverStore) {
             "v21.accent", "v21.round", "v21.font", "v21.fontScale", "v21.randomTheme", "v21.navGlow", "v21.miniGlow", "v21.haptics", "v21.motion", "v21.gradHeaders",
             "v21.seedLock", "v21.seed", "v21.weekday", "v21.defaultMood", "v21.daylist", "v21.ramp", "v21.favEvery", "v21.neverHeard",
             "v21.maxLen", "v21.artistGap", "v21.lang", "v21.explicit", "v21.autoEq", "v21.autoEqK", "v21.flow", "v21.sleepFade",
-            "v21.smartEvery", "v21.secret", "v21.autoLike", "v21.autoLikeN", "v21.djIntros", "v21.bubbleFreq", "v21.challenge", "v21.goal", "v21.jumpBack").forEach { store.put(it, null) }
+            "v21.smartEvery", "v21.secret", "v21.autoLike", "v21.autoLikeN", "v21.djIntros", "v21.bubbleFreq", "v21.challenge", "v21.goal", "v21.jumpBack",
+            "v21.mixLen", "v21.mixNew", "v21.liveLearn", "v21.djOrder", "v21.onlineNew").forEach { store.put(it, null) }
         _version.value = _version.value + 1
     }
 

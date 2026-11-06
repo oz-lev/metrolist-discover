@@ -68,7 +68,7 @@ import com.metrolist.music.discover.v2.V2Settings
 import kotlinx.coroutines.launch
 
 /** Remembered across recompositions / tab switches so the hero does not rebuild every time. */
-private object HomeCache { var daily: BuiltMix? = null; var builtAt = 0L; var match: Map<String, Int> = emptyMap() }
+private object HomeCache { var daily: BuiltMix? = null; var builtAt = 0L; var match: Map<String, Int> = emptyMap(); var personal: List<BuiltMix> = emptyList() }
 
 @Composable
 fun V2HomeSection() {
@@ -86,11 +86,16 @@ fun V2HomeSection() {
     var busy by remember { mutableStateOf<String?>(null) }
     var showSheet by remember { mutableStateOf(false) }
     var notForMe by remember { mutableStateOf<DiscoverItem?>(null) }
+    var personal by remember { mutableStateOf(HomeCache.personal) }
 
     LaunchedEffect(version) {
         if (daily == null || System.currentTimeMillis() - HomeCache.builtAt > 30 * 60_000L || version > 0) {
             runCatching { V2Engine.daily(ctx, db) }.getOrNull()?.let { daily = it; HomeCache.daily = it; HomeCache.builtAt = System.currentTimeMillis() }
         }
+    }
+    // 13.7.0.9: today's personal mixes (rotate daily)
+    LaunchedEffect(Unit) {
+        runCatching { V2Engine.personalMixes(ctx, db) }.getOrNull()?.let { personal = it; HomeCache.personal = it }
     }
     LaunchedEffect(state.items) {
         if (state.items.isNotEmpty()) runCatching { V2Engine.matchPercents(ctx, state.items.map { it.track.id }) }.getOrNull()?.let { match = it; HomeCache.match = it }
@@ -188,6 +193,16 @@ fun V2HomeSection() {
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     itemsIndexed(state.items, key = { _, it -> "v2d_" + it.track.id }) { i, item ->
                         DiscoverTile(item, match[item.track.id], onLongClick = { notForMe = item }) { player.playTracks(state.items.map { it.track }, "גילוי בשבילך", i) }
+                    }
+                }
+            }
+
+            // 13.7.0.9: personal mixes of the day
+            if (personal.isNotEmpty()) {
+                Text("מיקסים אישיים להיום 🎁", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 6.dp))
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    itemsIndexed(personal, key = { i, m -> "v2p_${i}_${m.title}" }) { _, mix ->
+                        MiniMixCard(mix.title, mix.tracks.firstOrNull()?.thumbnailUrl, mix.tracks.size) { player.playMix(mix, ctx) }
                     }
                 }
             }

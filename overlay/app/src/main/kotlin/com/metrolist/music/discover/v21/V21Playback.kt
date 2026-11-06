@@ -62,6 +62,7 @@ object V21Playback {
     private var lastEqCurve: AutoEq.Curve? = null
     private var autoLikeCheckedFor: String? = null
     private var flowLoading = false
+    private var mixLoading = false
     private val recentArtists = ArrayDeque<Pair<String, String>>()
 
     private val listener = object : Player.Listener {
@@ -178,8 +179,8 @@ object V21Playback {
         if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED && !ProfileScope.guest && !set.secret) {
             main.postDelayed({ runCatching { recordQueue(ctx) } }, 1_500L)
         }
-        // Flow: keep the queue endless
-        if (set.flow) refillFlow(s)
+        // Flow: keep the queue endless; 13.7.0.9: otherwise the endless main mix grows by itself near its end
+        if (set.flow) refillFlow(s) else if (set.mixLength == 0) refillMix(s)
     }
 
     /** Extra queue-guard rules (v2.1). Returns a Hebrew reason to skip, or null. [recent] excludes the song itself. */
@@ -228,6 +229,43 @@ object V21Playback {
             val more = runCatching { V2Engine.flowMore(s.applicationContext, s.database, queued) }.getOrDefault(emptyList())
             if (more.isNotEmpty()) runCatching { player()?.addMediaItems(more.map { it.mediaItem() }) }
             flowLoading = false
+        }
+    }
+
+    /** 13.7.0.9: appends the next batch of an endless main mix (built from the song playing now) when 3 or fewer are left. */
+    private fun refillMix(s: MusicService) {
+        val p = player() ?: return
+        if (mixLoading || p.mediaItemCount - p.currentMediaItemIndex - 1 >= 4) return
+        val cur = p.currentMediaItem?.mediaId ?: return
+        if (!V2Engine.isEndlessMix(cur)) return
+        mixLoading = true
+        val queued = (0 until p.mediaItemCount).map { p.getMediaItemAt(it).mediaId }.toSet()
+        scope.launch {
+            val more = runCatching { V2Engine.dailyMore(s.applicationContext, s.database, cur, queued) }.getOrDefault(emptyList())
+            if (more.isNotEmpty()) runCatching { player()?.addMediaItems(more.map { it.mediaItem() }) }
+            mixLoading = false
+        }
+    }
+
+    /** 13.7.0.9: real-time learning. Called from the io thread after an early skip / a full listen in a main mix. */
+    fun requestRerank() {
+        main.post { runCatching { rerankUpcoming() } }
+    }
+
+    private fun rerankUpcoming() {
+        val p = player() ?: return
+        if (p.shuffleModeEnabled) return
+        val start = p.currentMediaItemIndex + 1
+        val end = minOf(p.mediaItemCount, start + 200)
+        if (end - start < 2) return
+        val ids = (start until end).map { p.getMediaItemAt(it).mediaId }
+        val order = V2Engine.sessionOrder(ids) ?: return
+        val cur = ids.toMutableList()
+        for (k in order.indices) {
+            val from = cur.indexOf(order[k])
+            if (from < 0 || from == k) continue
+            p.moveMediaItem(start + from, start + k)
+            cur.add(k, cur.removeAt(from))
         }
     }
 

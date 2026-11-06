@@ -62,6 +62,14 @@ data class VibeConfig(
     /** keyword -> (energy delta, valence delta, mizrahi delta, cinematic delta, tag) */
     val keywords: List<KeywordRule> = DEFAULT_KEYWORDS,
     val artists: Map<String, ArtistVibe> = DEFAULT_ARTISTS,
+    /**
+     * 13.7.0.9: per-track vibe. Extra title keywords, a finer duration hint, per-track learned valence,
+     * a stronger related-songs neighbourhood for tracks with no evidence of their own, and the artist's
+     * own average (from its other, evidenced tracks) as the fallback. false = the 13.7.0.8 estimator.
+     */
+    val perTrack: Boolean = true,
+    /** extra keyword rules used only when [perTrack] is on */
+    val trackKeywords: List<KeywordRule> = TRACK_KEYWORDS,
 ) {
     companion object {
         val DEFAULT_KEYWORDS: List<KeywordRule> = listOf(
@@ -80,6 +88,18 @@ data class VibeConfig(
             KeywordRule(listOf("drill", "trap", "rap", "ראפ", "היפ הופ", "hip hop"), 0.15, -0.05, -0.15, 0.0, VibeTag.RAP),
             KeywordRule(listOf("rock", "metal", "רוק"), 0.20, 0.0, -0.20, 0.0, VibeTag.ROCK),
             KeywordRule(listOf("edm", "house", "techno", "trance", "dubstep", "drop", "festival", "bass boosted"), 0.25, 0.10, -0.30, 0.0, VibeTag.EDM),
+        )
+
+        /** 13.7.0.9: words that say something about ONE song (a ballad by a party artist, an intro, a prayer...). */
+        val TRACK_KEYWORDS: List<KeywordRule> = listOf(
+            KeywordRule(listOf("בלדה", "ballad", "love song", "שיר אהבה"), -0.18, -0.05, 0.0, 0.05, VibeTag.CHILL),
+            KeywordRule(listOf("intro", "interlude", "outro", "פתיחה"), -0.20, 0.0, 0.0, 0.10, VibeTag.CHILL),
+            KeywordRule(listOf("instrumental", "אינסטרומנטלי", "ללא מילים", "karaoke", "קריוקי"), -0.10, 0.0, 0.0, 0.20, VibeTag.CINEMATIC),
+            KeywordRule(listOf("תפילה", "אבינו", "אדון עולם", "prayer", "ניגון", "פיוט"), -0.22, -0.05, 0.10, 0.10, VibeTag.CHILL),
+            KeywordRule(listOf("megamix", "מגה מיקס", "dj set", "סט ", "non stop", "נון סטופ"), 0.22, 0.20, 0.0, 0.0, VibeTag.PARTY),
+            KeywordRule(listOf("hardstyle", "hard techno", "drum and bass", "dnb", "jump up"), 0.25, 0.0, -0.20, 0.0, VibeTag.EDM),
+            KeywordRule(listOf("אמא", "אבא", "ילדות", "זיכרונות", "memories"), -0.10, -0.12, 0.0, 0.0, VibeTag.SAD),
+            KeywordRule(listOf("יאללה", "בלאגן", "תרימו", "בום", "hands up", "turn up"), 0.20, 0.18, 0.0, 0.0, VibeTag.PARTY),
         )
 
         private fun a(e: Double, v: Double, m: Double, c: Double = 0.1, vararg t: VibeTag) = ArtistVibe(e, v, m, c, t.toSet())
@@ -133,8 +153,10 @@ data class VibeCorrections(
     val artistEnergy: Map<String, Double> = emptyMap(),
     val artistValence: Map<String, Double> = emptyMap(),
     val trackEnergy: Map<String, Double> = emptyMap(),
+    /** 13.7.0.9: per-track valence (a sad song by a happy artist). Old 3-part encodings decode with this empty. */
+    val trackValence: Map<String, Double> = emptyMap(),
 ) {
-    fun encode(): String = listOf(artistEnergy, artistValence, trackEnergy).joinToString("|") { m ->
+    fun encode(): String = listOf(artistEnergy, artistValence, trackEnergy, trackValence).joinToString("|") { m ->
         m.entries.joinToString(";") { "${it.key.replace(";", "").replace("|", "").replace("=", "")}=${"%.3f".format(java.util.Locale.ROOT, it.value)}" }
     }
 
@@ -145,7 +167,7 @@ data class VibeCorrections(
                 val parts = s.split("|")
                 fun map(i: Int): Map<String, Double> = parts.getOrNull(i).orEmpty().split(";").filter { "=" in it }
                     .associate { val k = it.substringBeforeLast("="); k to it.substringAfterLast("=").toDouble() }
-                VibeCorrections(map(0), map(1), map(2))
+                VibeCorrections(map(0), map(1), map(2), map(3))
             }.getOrDefault(VibeCorrections())
         }
     }
@@ -161,8 +183,13 @@ class VibeEstimator(
     var corrections: VibeCorrections = VibeCorrections(),
 ) {
     private val cache = HashMap<String, Vibe>()
+    /** 13.7.0.9: tracks whose own estimate rests on real evidence (known artist, a title keyword, a learned correction). */
+    private val evidence = HashSet<String>()
 
-    fun clearCache() = cache.clear()
+    fun clearCache() { cache.clear(); evidence.clear() }
+
+    /** true when [own] found something specific to this track or its artist (not just the language default). */
+    fun hasOwnEvidence(t: TrackMeta): Boolean { own(t); return t.id in evidence }
 
     /** Estimate from the track alone (no graph). */
     fun own(t: TrackMeta): Vibe {
@@ -176,6 +203,7 @@ class VibeEstimator(
         if (hebrew) tags += VibeTag.HEBREW
         // artist lexicon: average over credited artists we know
         val known = t.artistNames.mapNotNull { config.artists[it.trim().lowercase()] }
+        var ev = known.isNotEmpty()
         if (known.isNotEmpty()) {
             e = 0.25 * e + 0.75 * known.map { it.energy }.average()
             v = 0.25 * v + 0.75 * known.map { it.valence }.average()
@@ -183,34 +211,93 @@ class VibeEstimator(
             c = known.map { it.cinematic }.average()
             known.forEach { tags += it.tags }
         }
+        val title = t.title.lowercase()
         for (k in config.keywords) {
             if (k.words.any { w -> text.contains(w) }) {
                 e += k.dEnergy; v += k.dValence; m += k.dMizrahi; c += k.dCinematic; tags += k.tag
+                if (k.words.any { w -> title.contains(w) }) ev = true
+            }
+        }
+        // 13.7.0.9: words in the TITLE that say something about this one song
+        if (config.perTrack) for (k in config.trackKeywords) {
+            if (k.tag !in tags && k.words.any { w -> title.contains(w) }) {
+                e += k.dEnergy; v += k.dValence; m += k.dMizrahi; c += k.dCinematic; tags += k.tag; ev = true
             }
         }
         if (t.durationSec in 1..149) e += 0.05
         if (t.durationSec > 420) { c += 0.15; e -= 0.05 }
+        if (config.perTrack && t.durationSec in 330..420) e -= 0.03
         if (m >= 0.5 && VibeTag.HEBREW in tags) tags += VibeTag.MIZRAHI
         // feedback
         val a = t.mainArtist
         e += (corrections.artistEnergy[a] ?: 0.0) + (corrections.trackEnergy[t.id] ?: 0.0)
         v += corrections.artistValence[a] ?: 0.0
+        if (config.perTrack) {
+            v += corrections.trackValence[t.id] ?: 0.0
+            if (t.id in corrections.trackEnergy || t.id in corrections.trackValence) ev = true
+        }
         val out = Vibe(clamp(e), clamp(v), clamp(m), clamp(c), tags)
         cache[t.id] = out
+        if (ev) evidence += t.id
         return out
     }
 
     /** Estimate with one hop of related-songs smoothing. */
     fun estimate(t: TrackMeta, tracks: Map<String, TrackMeta>, related: Map<String, List<String>>): Vibe {
         val mine = own(t)
-        val nb = related[t.id].orEmpty().take(12).mapNotNull { tracks[it] }.map { own(it) }
-        if (nb.isEmpty()) return mine
-        val w = config.ownWeight
+        val nbTracks = related[t.id].orEmpty().take(12).mapNotNull { tracks[it] }
+        if (nbTracks.isEmpty()) return mine
+        if (!config.perTrack) {
+            val nb = nbTracks.map { own(it) }
+            val w = config.ownWeight
+            return mine.copy(
+                energy = clamp(w * mine.energy + (1 - w) * nb.map { it.energy }.average()),
+                valence = clamp(w * mine.valence + (1 - w) * nb.map { it.valence }.average()),
+                mizrahi = clamp(0.85 * mine.mizrahi + 0.15 * nb.map { it.mizrahi }.average()),
+            )
+        }
+        // 13.7.0.9: neighbours with evidence count fully, the rest a little; a track with no evidence of its own leans on them more
+        var we = 0.0; var se = 0.0; var sv = 0.0; var sm = 0.0; var sc = 0.0
+        for (n in nbTracks) {
+            val nv = own(n); val wt = if (n.id in evidence) 1.0 else 0.3
+            we += wt; se += wt * nv.energy; sv += wt * nv.valence; sm += wt * nv.mizrahi; sc += wt * nv.cinematic
+        }
+        val w = if (t.id in evidence) config.ownWeight else 0.4
         return mine.copy(
-            energy = clamp(w * mine.energy + (1 - w) * nb.map { it.energy }.average()),
-            valence = clamp(w * mine.valence + (1 - w) * nb.map { it.valence }.average()),
-            mizrahi = clamp(0.85 * mine.mizrahi + 0.15 * nb.map { it.mizrahi }.average()),
+            energy = clamp(w * mine.energy + (1 - w) * se / we),
+            valence = clamp(w * mine.valence + (1 - w) * sv / we),
+            mizrahi = clamp(0.85 * mine.mizrahi + 0.15 * sm / we),
+            cinematic = clamp(0.85 * mine.cinematic + 0.15 * sc / we),
         )
+    }
+
+    /**
+     * 13.7.0.9: vibes for a whole pool. A track with no evidence of its own and no evidenced neighbour takes its
+     * artist's average over the artist's informative tracks (the artist vibe as the fallback, per track otherwise).
+     */
+    fun estimateAll(list: Collection<TrackMeta>, tracks: Map<String, TrackMeta>, related: Map<String, List<String>>): Map<String, Vibe> {
+        val out = HashMap<String, Vibe>(list.size * 2)
+        val informative = HashSet<String>()
+        for (t in list) {
+            out[t.id] = estimate(t, tracks, related)
+            if (config.perTrack && (hasOwnEvidence(t) || related[t.id].orEmpty().take(12).any { tracks[it]?.let { n -> hasOwnEvidence(n) } == true }))
+                informative += t.id
+        }
+        if (!config.perTrack) return out
+        val sums = HashMap<String, DoubleArray>()
+        for (t in list) if (t.id in informative) {
+            val v = out[t.id] ?: continue
+            val a = sums.getOrPut(t.mainArtist) { DoubleArray(5) }
+            a[0] += v.energy; a[1] += v.valence; a[2] += v.mizrahi; a[3] += v.cinematic; a[4] += 1.0
+        }
+        for (t in list) if (t.id !in informative) {
+            val a = sums[t.mainArtist] ?: continue
+            val v = out[t.id] ?: continue
+            val n = a[4]
+            out[t.id] = v.copy(energy = clamp(0.3 * v.energy + 0.7 * a[0] / n), valence = clamp(0.3 * v.valence + 0.7 * a[1] / n),
+                mizrahi = clamp(0.5 * v.mizrahi + 0.5 * a[2] / n), cinematic = clamp(0.5 * v.cinematic + 0.5 * a[3] / n))
+        }
+        return out
     }
 
     /**
@@ -224,6 +311,7 @@ class VibeEstimator(
         val ae = corrections.artistEnergy.toMutableMap()
         val av = corrections.artistValence.toMutableMap()
         val te = corrections.trackEnergy.toMutableMap()
+        val tvm = corrections.trackValence.toMutableMap()
         val a = t.mainArtist
         target.energy?.let { te0 ->
             val diff = cur.energy - te0
@@ -243,9 +331,11 @@ class VibeEstimator(
                 else -> 0.0
             }
             av[a] = clampC((av[a] ?: 0.0) + delta * 0.5)
+            if (config.perTrack) tvm[t.id] = clampC((tvm[t.id] ?: 0.0) + delta)
         }
-        corrections = VibeCorrections(ae, av, if (te.size > 4000) te.entries.toList().takeLast(3000).associate { it.key to it.value } else te)
-        cache.clear() // an artist correction changes every track of that artist
+        fun cap(m: MutableMap<String, Double>) = if (m.size > 4000) m.entries.toList().takeLast(3000).associate { it.key to it.value } else m
+        corrections = VibeCorrections(ae, av, cap(te), cap(tvm))
+        clearCache() // an artist correction changes every track of that artist
     }
 
     private fun clampC(x: Double) = x.coerceIn(-config.maxCorrection, config.maxCorrection)

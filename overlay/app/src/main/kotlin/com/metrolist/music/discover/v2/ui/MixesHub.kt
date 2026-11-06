@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -58,6 +59,15 @@ import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
+private val personalBrushes = listOf(
+    Brush.linearGradient(listOf(Color(0xFF0F766E), Color(0xFF22D3EE))),
+    Brush.linearGradient(listOf(Color(0xFF7C2D12), Color(0xFFF59E0B))),
+    Brush.linearGradient(listOf(Color(0xFF581C87), Color(0xFFEC4899))),
+    Brush.linearGradient(listOf(Color(0xFF1E3A8A), Color(0xFF6366F1))),
+    Brush.linearGradient(listOf(Color(0xFF14532D), Color(0xFF84CC16))),
+    Brush.linearGradient(listOf(Color(0xFF881337), Color(0xFFF43F5E))),
+)
+
 private val dialColors = listOf(Color(0xFFFACC15), Color(0xFF22D3EE), Color(0xFFEF4444), Color(0xFFEC4899), Color(0xFF6366F1), Color(0xFF10B981))
 
 @Composable
@@ -72,6 +82,9 @@ fun MixesHubScreen(onBack: () -> Unit) {
     var mizrahi by remember { mutableFloatStateOf(0.5f) }
     var familiar by remember { mutableFloatStateOf(0.5f) }
     var tripMin by remember { mutableFloatStateOf(25f) }
+    // 13.7.0.9: today's personal mixes (they rotate every day)
+    var personal by remember { mutableStateOf<List<BuiltMix>>(emptyList()) }
+    LaunchedEffect(Unit) { personal = runCatching { V2Engine.personalMixes(ctx, db) }.getOrDefault(emptyList()) }
 
     fun run(label: String, block: suspend () -> BuiltMix) {
         if (busy != null) return
@@ -117,6 +130,16 @@ fun MixesHubScreen(onBack: () -> Unit) {
                             Text(p.emoji, fontSize = 28.sp)
                         }
                         Text(p.he, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 4.dp))
+                    }
+                }
+            }
+        }
+        if (personal.isNotEmpty()) {
+            item(key = "personal_title") { SectionTitle("המיקסים האישיים של היום") }
+            personal.forEachIndexed { i, m ->
+                item(key = "personal_$i") {
+                    SpecialCard(m.title.substringBefore(' '), m.title.substringAfter(' '), m.note ?: "${m.tracks.size} שירים", personalBrushes[i % personalBrushes.size]) {
+                        player?.playMix(m, ctx)
                     }
                 }
             }

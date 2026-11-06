@@ -7,6 +7,7 @@ package com.metrolist.music.discover.engine
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
 /** Moods the UI offers (chips, the dial and the emoji picker). */
@@ -59,6 +60,43 @@ class VibeMixer(private val random: Random = Random.Default) {
     /** A plain mood mix: best fitting tracks, artist-diversified. */
     fun build(pool: List<PoolTrack>, t: VibeTarget, size: Int = 25, familiar: Double = 0.5): List<PoolTrack> =
         diversify(rank(pool.distinctBy { it.track.id }) { score(it, t, familiar) }, size)
+
+    /**
+     * 13.7.0.9: familiar and never-heard songs are ranked separately and mixed at [newShare] (so the balance is real,
+     * not a side effect of the score), new songs spread evenly through the list, artist caps across both.
+     * [session] adds the real-time learning adjustment. Returns fewer than [size] only when the pool is smaller.
+     */
+    fun buildBalanced(pool: List<PoolTrack>, t: VibeTarget, size: Int, newShare: Double, session: SessionTaste? = null, newCutoff: Double = 0.15): List<PoolTrack> {
+        val uniq = pool.distinctBy { it.track.id }
+        if (uniq.isEmpty() || size <= 0) return emptyList()
+        val share = newShare.coerceIn(0.0, 1.0)
+        val famTarget = max(0.5, 1.0 - share)
+        val fam = rank(uniq.filter { it.familiarity >= newCutoff }) { score(it, t, famTarget) + (session?.adjust(it) ?: 0.0) }
+        val new = rank(uniq.filter { it.familiarity < newCutoff }) { score(it, t, 0.0) + (session?.adjust(it) ?: 0.0) }
+        val maxPer = max(2, size / 25)
+        var nNew = min((size * share).roundToInt(), new.size)
+        val nFam = min(size - nNew, fam.size)
+        if (nFam < size - nNew) nNew = min(new.size, size - nFam)
+        val a = diversify(fam, nFam, maxPer)
+        val b = diversify(new, nNew, maxPer)
+        val used = HashSet<String>().apply { a.forEach { add(it.track.id) }; b.forEach { add(it.track.id) } }
+        val rest = (fam + new).filter { it.track.id !in used }
+        return diversify(interleave(a, b) + rest, size, maxPer)
+    }
+
+    /** Spreads [b] evenly through [a] (both keep their own order). */
+    fun interleave(a: List<PoolTrack>, b: List<PoolTrack>): List<PoolTrack> {
+        if (b.isEmpty()) return a
+        if (a.isEmpty()) return b
+        val total = a.size + b.size
+        val out = ArrayList<PoolTrack>(total)
+        var ia = 0; var ib = 0
+        for (i in 0 until total) {
+            val wantB = ib < b.size && (ia >= a.size || (ib + 1).toDouble() * total <= (i + 1).toDouble() * b.size + 1e-9)
+            if (wantB) out += b[ib++] else out += a[ia++]
+        }
+        return out
+    }
 
     /** "רגש להיפך": starts sad and calm, ends happy party. Mood score never goes down along the list. */
     fun moodFlip(pool: List<PoolTrack>, size: Int = 20): List<PoolTrack> {

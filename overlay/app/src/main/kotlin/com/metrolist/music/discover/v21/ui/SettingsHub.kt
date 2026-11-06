@@ -196,6 +196,16 @@ fun SettingsHubScreen(onBack: () -> Unit, onNavigate: (String) -> Unit) {
         add(SItem(g2, "עונש על דילוגים", "כמה המנוע נוטר לשירים שדילגת עליהם") {
             SettingSlider("עונש על שירים שדילגת עליהם", s.skipPenalty.toFloat(), 0f..2.5f, 0, { v -> when { v < 0.2f -> "סולח לגמרי 😇"; v < 1.2f -> "רגיל"; v < 2f -> "קשוח"; else -> "לא סולח 😤" } }, "סולח", "נוקם") { s.skipPenalty = it.toDouble(); V2Engine.invalidate() }
         })
+        // 13.7.0.9: the main mix
+        add(SItem(g2, "אורך המיקס הראשי", "50, 100 או אינסופי (ממשיך לבד לפי מה שאתה שומע)") {
+            Choice("📏 אורך המיקס הראשי", listOf(50 to "50 שירים", 100 to "100 שירים", 0 to "אינסופי ♾️"), s.mixLength) { s.mixLength = it }
+        })
+        add(SItem(g2, "כמה חדש במיקס הראשי", "האיזון בין שירים מוכרים לשירים שלא שמעת") {
+            SettingSlider("🧭 שירים חדשים במיקס הראשי", (s.mixNewShare * 100).toFloat(), 0f..60f, 11, { "${it.roundToInt()}% חדש · ${100 - it.roundToInt()}% מוכר" }, "רק מוכר", "60% חדש") { s.mixNewShare = it / 100.0 }
+        })
+        add(SItem(g2, "למידה בזמן אמת", "דילוג מוקדם מזיז את שאר המיקס מיד, האזנה מלאה מקדמת דומים") { Toggle("⚡ למידה בזמן אמת", "דילוג מוקדם = פחות מהאמן והווייב הזה עד סוף הסשן", s.liveLearning) { s.liveLearning = it } })
+        add(SItem(g2, "סידור כמו דיג'יי", "האנרגיה עולה ויורדת בגלים חלקים, בלי אותו אמן ברצף") { Toggle("🎧 סידור כמו דיג'יי", "גלי אנרגיה חלקים במקום סדר דירוג", s.djOrder) { s.djOrder = it } })
+        add(SItem(g2, "עוד שירים חדשים מהרשת", "רדיו ושירים קשורים מ-YouTube Music, לא רק מהספרייה שלך") { Toggle("🌐 עוד שירים חדשים מהרשת", "כבוי = רק מהספרייה וההיסטוריה (מהיר יותר)", s.onlineNew) { s.onlineNew = it; V2Engine.invalidate() } })
         add(SItem(g2, "מצב רוח לפי יום בשבוע", "למשל: שישי = מזרחית, ראשון = רגוע") {
             val m = s.weekdayMoods
             NavRow("📆 מצב רוח לפי יום בשבוע", if (m.isEmpty()) "אוטומטי לפי השעה" else DAYS.filter { it.second in m }.joinToString(" · ") { "${it.first}׳ ${m[it.second]?.emoji}" }) { weekdayDialog = true }
@@ -333,7 +343,7 @@ fun SettingsHubScreen(onBack: () -> Unit, onNavigate: (String) -> Unit) {
         })
         add(SItem(g8, "קפוץ בחזרה", "מדף השירים האחרונים בבית (כמו בספוטיפיי)") { Toggle("⏪ מדף \"קפוץ בחזרה\"", "השירים האחרונים ששמעת, בלחיצה אחת", s.jumpBack) { s.jumpBack = it } })
         add(SItem(g8, "הערות DJ", "\"הנה משהו שלא שמעת מזמן\" כשהשיר מתחיל") { Toggle("🎧 הערות DJ", "הודעה קטנה כשמתחיל שיר מיוחד (רעיון מה-DJ של ספוטיפיי)", s.djIntros) { s.djIntros = it } })
-        add(SItem(g8, "מיקס לילה אופליין", "בלילה, בטעינה וב-Wi-Fi המיקס היומי יורד לבד") { Toggle("📥 מיקס לילה אופליין", "25 שירים יורדים בלילה, בטעינה וב-Wi-Fi", s.offlineMix) { s.offlineMix = it; V2Offline.schedule(ctx) } })
+        add(SItem(g8, "מיקס לילה אופליין", "בלילה, בטעינה וב-Wi-Fi המיקס היומי יורד לבד") { Toggle("📥 מיקס לילה אופליין", "עד ${s.offlineSize} שירים יורדים בלילה, בטעינה וב-Wi-Fi", s.offlineMix) { s.offlineMix = it; V2Offline.schedule(ctx) } })
         add(SItem(g8, "רולטה", "שיר אקראי לגמרי מכל YouTube Music") {
             Pill("🎲 רולטה עכשיו", selected = true) {
                 if (busy == null) {

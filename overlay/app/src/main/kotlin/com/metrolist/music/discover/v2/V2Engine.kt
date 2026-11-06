@@ -46,10 +46,14 @@ import com.metrolist.music.discover.engine.VibeCorrections
 import com.metrolist.music.discover.engine.VibeEstimator
 import com.metrolist.music.discover.engine.VibeMixer
 import com.metrolist.music.discover.engine.VibeTarget
+import com.metrolist.music.discover.engine.MixSession
+import com.metrolist.music.discover.engine.PersonalMixes
+import com.metrolist.music.discover.engine.SkipRule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.ln
@@ -75,6 +79,14 @@ object V2Engine {
     @Volatile private var snap: Snapshot? = null
     private val onlineCache = HashMap<String, Pair<Long, List<TrackMeta>>>()
     @Volatile private var activeMix: Pair<VibeTarget, Set<String>>? = null
+    /** 13.7.0.9: recent main-mix sessions (the home hero rebuilds often; the one that is playing must survive) */
+    private class Live(val session: MixSession, val endless: Boolean)
+    private val lives = ArrayDeque<Live>()
+    @Volatile private var playing: Live? = null
+    private val relatedCache = HashMap<String, Pair<Long, List<TrackMeta>>>()
+    @Volatile private var personalCache: Pair<Long, List<BuiltMix>>? = null
+    const val ENDLESS_FIRST = 40
+    const val MORE_SIZE = 20
     private var feedbackCount = 0
 
     data class Snapshot(val history: History, val profile: TasteProfile, val pool: List<PoolTrack>, val byId: Map<String, PoolTrack>, val builtAt: Long)
@@ -98,6 +110,8 @@ object V2Engine {
         val counts = HashMap<String, Int>()
         for (p in history.plays) if (p.playedMs >= 30_000L) counts[p.trackId] = (counts[p.trackId] ?: 0) + 1
         val pool = ArrayList<PoolTrack>()
+        // 13.7.0.9: per-track vibes for the whole library at once (artist average as the fallback)
+        val vibes = synchronized(e) { e.estimateAll(history.tracks.values, history.tracks, history.related) }
         fun add(t: TrackMeta, fam: Double?) {
             if (t.title.isBlank()) return
             val c = counts[t.id] ?: 0
@@ -105,7 +119,7 @@ object V2Engine {
             val art = profile.artistAffinity(t.mainArtist)
             var aff = (0.55 * profile.trackAffinity(t.id).coerceIn(0.0, 1.0) + 0.45 * ((art + 1) / 2)).coerceIn(0.0, 1.0)
             aff = (aff - 0.5 * s.skipPenalty * profile.trackSkipExcess(t.id)).coerceIn(0.0, 1.0)
-            pool += PoolTrack(t, e.estimate(t, history.tracks, history.related), familiarity, aff)
+            pool += PoolTrack(t, vibes[t.id] ?: synchronized(e) { e.estimate(t, history.tracks, history.related) }, familiarity, aff)
         }
         for (t in history.tracks.values) add(t, null)
         val known = history.tracks.keys
@@ -146,8 +160,39 @@ object V2Engine {
     }
 
     suspend fun related(songId: String): List<TrackMeta> = withContext(Dispatchers.IO) {
+        synchronized(relatedCache) { relatedCache[songId]?.let { if (System.currentTimeMillis() - it.first < 6 * 3_600_000L) return@withContext it.second } }
         val r = withTimeoutOrNull(12_000) { YouTube.next(WatchEndpoint(videoId = songId, playlistId = "RDAMVM$songId")).getOrNull() }
-        r?.items.orEmpty().map { it.meta() }.filter { it.id != songId }
+        val list = r?.items.orEmpty().map { it.meta() }.filter { it.id != songId }
+        if (list.isNotEmpty()) synchronized(relatedCache) { if (relatedCache.size > 300) relatedCache.clear(); relatedCache[songId] = System.currentTimeMillis() to list }
+        list
+    }
+
+    /** Songs played (>= 1 min) the most in the last 14 days, a few at random: the seeds for online "radio" candidates. */
+    private fun recentFavorites(s: Snapshot, n: Int): List<TrackMeta> {
+        val since = now() - 14 * DayClock.DAY_MS
+        val c = HashMap<String, Int>()
+        for (p in s.history.plays) if (p.timestampMs >= since && p.playedMs >= 60_000L) c[p.trackId] = (c[p.trackId] ?: 0) + 1
+        return c.entries.sortedByDescending { it.value }.take(n * 3).mapNotNull { s.history.tracks[it.key] }.shuffled(random).take(n)
+    }
+
+    /**
+     * 13.7.0.9: more new candidates from online for the main mix: YouTube Music radio / related songs of [seeds]
+     * (what is playing now) and of recent favourites, plus the mood's searches. Bounded to ~9 s; whatever arrived is used.
+     */
+    private suspend fun dailyOnline(ctx: Context, s: Snapshot, preset: MoodPreset?, seeds: List<TrackMeta> = emptyList()): List<PoolTrack> {
+        val got = java.util.Collections.synchronizedList(ArrayList<TrackMeta>())
+        val seedTracks = (seeds + recentFavorites(s, 4)).distinctBy { it.id }.take(5)
+        withTimeoutOrNull(9_000) {
+            coroutineScope {
+                for (st in seedTracks) launch { got.addAll(runCatching { related(st.id) }.getOrDefault(emptyList())) }
+                val qs = preset?.let { presetSeeds[it] }.orEmpty()
+                if (qs.isNotEmpty()) launch { got.addAll(runCatching { searchMany(qs) }.getOrDefault(emptyList())) }
+                Unit
+            }
+        }
+        val extra = synchronized(got) { got.toList() }
+        if (extra.isEmpty()) return s.pool
+        return s.pool + extra.distinctBy { it.id }.filter { it.id !in s.byId && it.title.isNotBlank() }.map { poolTrack(ctx, it, s) }
     }
 
     private val presetSeeds: Map<MoodPreset, List<String>> = mapOf(
@@ -251,7 +296,11 @@ object V2Engine {
         finish(ctx, s, mixer(ctx).drama(pool, 20), "🎬 מצב דרמה", MoodPreset.DRAMA.target, "פסקול לחיים שלך עכשיו")
     }
 
-    suspend fun daily(ctx: Context, db: MusicDatabase): BuiltMix = withContext(Dispatchers.Default) {
+    /**
+     * The main mix. 13.7.0.9: length from the settings (50 / 100 / endless = first [ENDLESS_FIRST], then [dailyMore]),
+     * balanced familiar / new, DJ energy order, online radio candidates. [sizeOverride] = a one-off build (offline job).
+     */
+    suspend fun daily(ctx: Context, db: MusicDatabase, sizeOverride: Int? = null): BuiltMix = withContext(Dispatchers.Default) {
         val set = V2Settings.get(ctx)
         val taste = set.activeTaste()
         if (taste != null) return@withContext tasteMix(ctx, db, taste, minutes = 60)
@@ -260,7 +309,73 @@ object V2Engine {
         val s = snapshot(ctx, db)
         val t = mixer(ctx).target(preset, Sliders(familiarNew = 0.65)).copy(tags = emptySet())
         val title = if (set.daylist) DailyPlan.daylistTitle(dt.dayOfWeek.value, dt.hour, preset) else "המיקס היומי שלך"
-        finish(ctx, s, mixer(ctx).build(s.pool, t, 35, 0.65), title, t)
+        val endless = sizeOverride == null && set.mixLength == 0
+        val size = sizeOverride ?: if (endless) ENDLESS_FIRST else set.mixLength
+        val pool = if (set.onlineNew) dailyOnline(ctx, s, preset) else s.pool
+        val session = MixSession(t, newShare = set.mixNewShare, djOrder = set.djOrder)
+        val first = synchronized(session) { session.nextBatch(mixer(ctx), pool, size) }
+        val mix = finish(ctx, s, first, title, t, if (endless) "אינסופי ♾️ ממשיך לבד" else null)
+        if (sizeOverride == null) keepLive(Live(session, endless))
+        mix
+    }
+
+    private fun keepLive(l: Live) = synchronized(lives) {
+        lives.addLast(l)
+        while (lives.size > 4) { val drop = lives.firstOrNull { it !== playing } ?: break; lives.remove(drop) }
+    }
+
+    private fun liveFor(id: String): Live? {
+        playing?.let { if (synchronized(it.session) { it.session.contains(id) }) return it }
+        val l = synchronized(lives) { lives.lastOrNull { synchronized(it.session) { it.session.contains(id) } } }
+        if (l != null) playing = l
+        return l
+    }
+
+    /** true when [songId] belongs to an endless main mix (the service extends that queue). */
+    fun isEndlessMix(songId: String): Boolean = liveFor(songId)?.endless == true
+
+    /** 13.7.0.9: the next batch of an endless main mix, from what is playing now; never repeats inside the session. */
+    suspend fun dailyMore(ctx: Context, db: MusicDatabase, currentId: String, queued: Set<String>): List<TrackMeta> = withContext(Dispatchers.Default) {
+        val live = liveFor(currentId) ?: return@withContext emptyList()
+        if (!live.endless) return@withContext emptyList()
+        val set = V2Settings.get(ctx)
+        val s = snapshot(ctx, db)
+        val session = live.session
+        val cur = synchronized(session) { session.track(currentId) } ?: s.byId[currentId]
+        val base = if (set.onlineNew) dailyOnline(ctx, s, null, listOfNotNull(cur?.track)) else s.pool
+        var batch = synchronized(session) { session.nextBatch(mixer(ctx), base.filter { it.track.id !in queued }, MORE_SIZE, cur) }
+        if (batch.isEmpty() && !set.onlineNew && cur != null) {
+            // the library ran dry: one radio fetch around the current song
+            val more = dailyOnline(ctx, s, null, listOf(cur.track))
+            batch = synchronized(session) { session.nextBatch(mixer(ctx), more.filter { it.track.id !in queued }, MORE_SIZE, cur) }
+        }
+        val out = shape(ctx, s, ruleEngine(ctx, s).filter(batch, now()))
+        val am = activeMix
+        activeMix = session.baseTarget to ((am?.second ?: emptySet()) + out.map { it.track.id })
+        out.map { it.track }
+    }
+
+    /** 13.7.0.9: a new order for the songs waiting in the queue after a skip / full listen, or null to leave it. */
+    fun sessionOrder(upcoming: List<String>): List<String>? {
+        val live = upcoming.firstNotNullOfOrNull { liveFor(it) } ?: return null
+        return synchronized(live.session) { live.session.reorder(upcoming) }
+    }
+
+    /** 13.7.0.9: today's personal mixes (rotate daily), built once per day. */
+    suspend fun personalMixes(ctx: Context, db: MusicDatabase, force: Boolean = false): List<BuiltMix> = withContext(Dispatchers.Default) {
+        val day = DayClock.dayKey(now())
+        personalCache?.let { if (!force && it.first == day && it.second.isNotEmpty()) return@withContext it.second }
+        val s = snapshot(ctx, db)
+        val pool = if (V2Settings.get(ctx).onlineNew) dailyOnline(ctx, s, null) else s.pool
+        val all = PersonalMixes.all(s.history, pool, now(), VibeMixer(Random(day)))
+        val today = PersonalMixes.today(all, day, DayClock.dateTime(now()).hour)
+        val rules = ruleEngine(ctx, s)
+        val out = today.mapNotNull { m ->
+            val ok = rules.filter(m.tracks, now())
+            if (ok.size < PersonalMixes.MIN_SIZE) null else BuiltMix("${m.emoji} ${m.titleHe}", ok.map { it.track }, null, m.subtitleHe)
+        }
+        personalCache = day to out
+        out
     }
 
     suspend fun reshape(ctx: Context, db: MusicDatabase, current: TrackMeta, action: VibeAction): BuiltMix = withContext(Dispatchers.Default) {
@@ -465,11 +580,18 @@ object V2Engine {
 
     // ------------------------------------------------------------------ feedback (called from DiscoverHooks on the io thread)
     fun onPlayed(ctx: Context, songId: String, playedMs: Long, durationMs: Long) {
+        val skipped = SkipRule.isEarlySkip(playedMs, durationMs)
+        val full = SkipRule.isFull(playedMs, durationMs)
+        // 13.7.0.9: session-scoped real-time learning, then re-rank the rest of the playing main mix
+        if ((skipped || full) && V2Settings.get(ctx).liveLearning) {
+            liveFor(songId)?.let { live ->
+                synchronized(live.session) { live.session.onPlayed(songId, skipped, full, fallback = snap?.byId?.get(songId)) }
+                runCatching { com.metrolist.music.discover.v21.V21Playback.requestRerank() }
+            }
+        }
         val (target, ids) = activeMix ?: return
         if (songId !in ids) return
-        val t = snap?.byId?.get(songId)?.track ?: return
-        val skipped = playedMs < 30_000L || (durationMs > 0 && playedMs < durationMs * 0.35)
-        val full = durationMs > 0 && playedMs >= durationMs * 0.85
+        val t = snap?.byId?.get(songId)?.track ?: liveFor(songId)?.let { synchronized(it.session) { it.session.track(songId) } }?.track ?: return
         if (!skipped && !full) return
         val e = estimator(ctx)
         synchronized(e) { e.feedback(t, target, skipped, full) }

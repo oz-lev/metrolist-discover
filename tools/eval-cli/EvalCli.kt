@@ -87,6 +87,8 @@ fun main(args: Array<String>) {
     arg("--dump")?.let { poolDump(h, engine, it); return }
     if ("--grid2" in args) { reportGrid(h); return }
     if ("--diag" in args) { poolDiag(h, engine); return }
+    if ("--mixes" in args) { mixReport(h); return }
+    if ("--personal" in args) { personalReport(h); return }
     if ("--report" in args) { println("AVG   " + fmt(listReport(h, engine))); return }
     val holdout = arg("--holdout")?.toDouble() ?: 14.0
     if ("--grid" in args) {

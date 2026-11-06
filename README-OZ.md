@@ -157,6 +157,27 @@ reads `/releases/latest`, which GitHub never points at a pre-release.
   (or on the phone: Discover sheet -> "Test on my history"). Personal data never goes to the repo or CI.
 - Updating the baseline after an intentional improvement: `java -cp eval.jar EvalCliKt --synthetic --write-baseline overlay/app/src/test/resources/discover/baseline.properties`.
 
+## 13.7.0.9 endless main mix, real-time learning, per-track vibe, DJ order, personal mixes (measured)
+- `engine/MixFlow.kt`: `MixSession` (first batch 40, then batches of 20 that follow the song playing now, never repeating inside the
+  session; returns empty when the pool is dry so the app fetches radio songs), `SessionTaste` (early skip <30 s or <35%: artist -0.35 and
+  songs near that vibe down; full listen: artist +0.12 and near songs up; queue slot = 0.025, so one skip sinks that artist ~14 places),
+  `EnergyArc` (waves of 12 by rank, energy rises then falls in small steps; a high current song starts the wave falling; same artist kept
+  >= 2 apart), `SkipRule`. `VibeMixer.buildBalanced` ranks familiar and never-heard songs separately and mixes them at the set share.
+- `Vibe.kt` (`VibeConfig.perTrack`, default on): title-only keyword rules (ballad, intro, instrumental, prayer, megamix, hardstyle...),
+  per-track learned valence (4th part of the corrections string; old strings decode), evidence-weighted related-songs smoothing
+  (a song with nothing of its own leans 60% on its neighbours), `estimateAll` (no evidence at all -> the artist's average).
+- `engine/PersonalMixes.kt`: הגילויים שלך, עונה שעברה (>= 3 plays 28-62 days ago, <= 1 in the last 21), artist + ~5 similar (related graph,
+  vibe as fallback), נסיעה / ספורט / ריכוז / לילה from the user's busiest hours inside each window, שינוי כיוון (70% new, neighbouring style).
+  Min 8 songs each, `today()` rotates by day (max 6). 18 new tests (104 engine tests).
+- App glue: `V2Engine.daily(sizeOverride)`, `dailyMore`, `sessionOrder`, `personalMixes`, `dailyOnline` (radio of the current song + recent
+  favourites + the mood's searches, ~9 s bound, cached 6 h); `V21Playback.refillMix` / `requestRerank` (moveMediaItem, never in shuffle);
+  settings: `v21.mixLen` (0 = endless), `v21.mixNew` (0.3), `v21.liveLearn`, `v21.djOrder`, `v21.onlineNew`; offline job up to 100.
+- Offline evaluation (`EvalCli --tsv DIR --mixes / --personal`, tools/eval-cli/MixEval.kt), one real history, 12 weekly cuts, offline pool
+  only (no online songs): main mix hit (played, not skipped, in the next 7 days) 0.369 (13.7.0.8, 35 songs, 0% new) vs 0.286 for the first 35
+  at 30% new (0.398 at 0% new: the per-track ranking itself is better; new songs cannot be hits offline). Never-heard share 0 -> 25-29%,
+  energy step 0.047 -> 0.025, repeats 0, songs with an uninformative default vibe 57% -> 27%. Session replay: the next fully played song's
+  rank percentile 0.684 -> 0.743 with the session adjustment. Discover row precision@100 (14-day holdout) 0.82, unchanged.
+
 ## 13.7.0.8 ranking refinements (measured)
 - Rolling list report: `java -cp eval.jar EvalCliKt --tsv DIR --report` (12 weekly cuts, 7-day holdout each) measures the FINAL Discover list (recommend(), n=40):
   hit = share of the list played (not skipped) in the next week, newHit = of those never heard before, skippedPick = list songs only skipped,
