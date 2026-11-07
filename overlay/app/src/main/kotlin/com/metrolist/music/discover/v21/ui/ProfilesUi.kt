@@ -19,6 +19,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.text.style.TextOverflow
+import com.metrolist.music.discover.v2.V2Engine
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -88,6 +94,91 @@ fun ProfileSwitcherRow(modifier: Modifier = Modifier, onManage: (() -> Unit)? = 
     }
 }
 
+/**
+ * 13.7.0.10: the one-tap profile chip (V2 home + Mixes hub): the active profile's emoji, name and colour. A tap opens
+ * the quick switcher sheet; picking a profile there switches at once and the home reloads that profile's own cached
+ * mixes (nothing of the other profile is recomputed or shown).
+ */
+@Composable
+fun ProfileChip(modifier: Modifier = Modifier, onManage: () -> Unit) {
+    val ctx = LocalContext.current
+    val version by V2Settings.version.collectAsStateWithLifecycle()
+    val p = remember(version) { V21Profiles.active(ctx) }
+    var open by remember { mutableStateOf(false) }
+    Row(modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(50))
+                .background(Brush.linearGradient(listOf(Color(p.color), Color(p.color).copy(alpha = 0.6f))))
+                .clickable { open = true }
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+        ) {
+            Text(p.emoji, fontSize = 18.sp)
+            Spacer(Modifier.width(6.dp))
+            Text(p.name, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.width(6.dp))
+            Text("▾", color = Color.White, fontSize = 14.sp)
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(if (p.guest) "לא נרשם כלום" else "הטעם והמיקסים של הפרופיל הזה בלבד", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+    }
+    if (open) ProfileQuickSheet(onDismiss = { open = false }, onManage = { open = false; onManage() })
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ProfileQuickSheet(onDismiss: () -> Unit, onManage: () -> Unit) {
+    val ctx = LocalContext.current
+    val version by V2Settings.version.collectAsStateWithLifecycle()
+    val list = remember(version) { V21Profiles.list(ctx) }
+    var edit by remember { mutableStateOf<DProfile?>(null) }
+    var creating by remember { mutableStateOf(false) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        V2Rtl {
+            Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 12.dp)) {
+                Text("החלפת פרופיל", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
+                Text("לכל פרופיל היסטוריה, טעם ומיקסים משלו. שיר שנשמע בפרופיל אחד לא יופיע באחר.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp))
+                list.forEach { p ->
+                    val on = p.id == ProfileScope.active
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp, vertical = 3.dp).clip(RoundedCornerShape(18.dp))
+                            .background(if (on) Color(p.color).copy(alpha = 0.9f) else Color(p.color).copy(alpha = 0.18f))
+                            .clickable {
+                                if (!on) { V21Profiles.switchTo(ctx, p.id); toast(ctx, "${p.emoji} ${p.name}" + if (p.guest) " (לא נרשם כלום)" else "") }
+                                onDismiss()
+                            }
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    ) {
+                        Text(p.emoji, fontSize = 24.sp)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(p.name + if (on) "  ✓" else "", fontWeight = FontWeight.Bold, color = if (on) Color.White else MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(when {
+                                p.guest -> "לא נרשם כלום, משתמש בטעם הראשי"
+                                V2Engine.isWarm(p.id) -> "מוכן, נפתח מיד"
+                                else -> "טעם ומיקסים משלו"
+                            }, style = MaterialTheme.typography.bodySmall, color = if (on) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        }
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp).clip(CircleShape).clickable { edit = p }) { Text("✏️", fontSize = 18.sp) }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    Box(Modifier.weight(1f)) { Pill("➕ פרופיל חדש", selected = true) { creating = true } }
+                    Box(Modifier.weight(1f)) { Pill("⚙️ ניהול ומחיקה") { onManage() } }
+                }
+            }
+        }
+    }
+    if (creating || edit != null) ProfileDialog(edit, onDismiss = { creating = false; edit = null }) { name, emoji, color ->
+        val e = edit
+        if (e == null) { val p = V21Profiles.create(ctx, name, emoji, color); V21Profiles.switchTo(ctx, p.id); onDismiss() } else V21Profiles.rename(ctx, e.id, name, emoji, color)
+        creating = false; edit = null
+    }
+}
+
 @Composable
 fun ProfilesScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
@@ -99,7 +190,7 @@ fun ProfilesScreen(onBack: () -> Unit) {
     var addRule by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf<DProfile?>(null) }
 
-    V2Page(title = "פרופילים 👥", subtitle = "לכל פרופיל הגדרות, ערכה ולמידה משלו", onBack = onBack) {
+    V2Page(title = "פרופילים 👥", subtitle = "לכל פרופיל היסטוריה, טעם, מיקסים והגדרות משלו", onBack = onBack) {
         list.forEach { p ->
             item(key = "p_${p.id}") {
                 val on = p.id == ProfileScope.active
@@ -113,8 +204,8 @@ fun ProfilesScreen(onBack: () -> Unit) {
                             Text(p.name + if (on) "  ✓" else "", color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium)
                             Text(when {
                                 p.guest -> "אורח: ההשמעות לא נרשמות ולא משנות את הלמידה שלך"
-                                p.id == ProfileScope.DEFAULT -> "הפרופיל הראשי (כל הלמידה הקיימת)"
-                                else -> "הגדרות, ערכה ולמידה נפרדות"
+                                p.id == ProfileScope.DEFAULT -> "הפרופיל הראשי (כל ההיסטוריה הקודמת שלך)"
+                                else -> "היסטוריה, טעם ומיקסים נפרדים"
                             }, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
                         }
                         Text("✏️", fontSize = 20.sp, modifier = Modifier.clip(CircleShape).clickable { edit = p }.padding(8.dp))
@@ -149,7 +240,7 @@ fun ProfilesScreen(onBack: () -> Unit) {
                 }
             }
         }
-        item(key = "hint") { Hint("ההיסטוריה של Metrolist משותפת לכולם (חוץ מאורח, שלא נרשם בכלל). הלמידה של Discover, ההגדרות והערכה נפרדות לכל פרופיל.", Modifier.padding(vertical = 10.dp)) }
+        item(key = "hint") { Hint("כל השמעה, לייק והורדה נרשמים לפרופיל שהיה פעיל באותו רגע. ההמלצות, המיקסים והטעם של כל פרופיל נבנים רק מההיסטוריה שלו. ההיסטוריה שלפני העדכון שייכת ל\"אני\". אורח לא נרשם בכלל.", Modifier.padding(vertical = 10.dp)) }
     }
 
     if (creating || edit != null) ProfileDialog(edit, onDismiss = { creating = false; edit = null }) { name, emoji, color ->
@@ -162,7 +253,7 @@ fun ProfilesScreen(onBack: () -> Unit) {
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
             title = { Text("למחוק את ${p.name}?") },
-            text = { Text("ההגדרות והלמידה של הפרופיל הזה יימחקו. ההיסטוריה שלך נשארת.") },
+            text = { Text("ההשמעות, הטעם, ההגדרות והמיקסים של הפרופיל הזה יימחקו. שאר הפרופילים לא נפגעים.") },
             confirmButton = { TextButton(onClick = { V21Profiles.delete(ctx, p.id); confirmDelete = null }) { Text("מחק") } },
             dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("ביטול") } },
         )

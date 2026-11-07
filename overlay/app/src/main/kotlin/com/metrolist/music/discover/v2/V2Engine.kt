@@ -14,6 +14,7 @@ import com.metrolist.innertube.models.SongItem
 import com.metrolist.innertube.models.WatchEndpoint
 import com.metrolist.music.db.MusicDatabase
 import com.metrolist.music.discover.DiscoverHooks
+import com.metrolist.music.discover.engine.ProfileScope
 import com.metrolist.music.discover.DiscoverRepository
 import com.metrolist.music.discover.DiscoverStore
 import com.metrolist.music.discover.engine.Achievements
@@ -75,8 +76,18 @@ object V2Engine {
         val s = V2Settings.get(ctx)
         return if (s.seedLock) VibeMixer(SeedLock.random(true, s.seed, DayClock.dayKey(now()))) else defaultMixer
     }
-    @Volatile private var est: VibeEstimator? = null
-    @Volatile private var snap: Snapshot? = null
+    // 13.7.0.10: every cache that holds taste is per profile, so a switch is instant (the other profile's entries stay
+    // warm) and nothing built for one profile is ever served to another.
+    private val ests = java.util.concurrent.ConcurrentHashMap<String, VibeEstimator>()
+    private val snaps = java.util.concurrent.ConcurrentHashMap<String, Snapshot>()
+    private val personalCaches = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<BuiltMix>>>()
+    private fun pid(): String = ProfileScope.active
+    private var est: VibeEstimator?
+        get() = ests[pid()]
+        set(v) { if (v == null) ests.remove(pid()) else ests[pid()] = v }
+    private var snap: Snapshot?
+        get() = snaps[pid()]
+        set(v) { if (v == null) snaps.remove(pid()) else snaps[pid()] = v }
     private val onlineCache = HashMap<String, Pair<Long, List<TrackMeta>>>()
     @Volatile private var activeMix: Pair<VibeTarget, Set<String>>? = null
     /** 13.7.0.9: recent main-mix sessions (the home hero rebuilds often; the one that is playing must survive) */
@@ -84,25 +95,34 @@ object V2Engine {
     private val lives = ArrayDeque<Live>()
     @Volatile private var playing: Live? = null
     private val relatedCache = HashMap<String, Pair<Long, List<TrackMeta>>>()
-    @Volatile private var personalCache: Pair<Long, List<BuiltMix>>? = null
     const val ENDLESS_FIRST = 40
     const val MORE_SIZE = 20
     private var feedbackCount = 0
 
-    data class Snapshot(val history: History, val profile: TasteProfile, val pool: List<PoolTrack>, val byId: Map<String, PoolTrack>, val builtAt: Long)
+    /** [foreign]: songs that only ever happened in other profiles; online sources never add them to this profile's mixes. */
+    data class Snapshot(val history: History, val profile: TasteProfile, val pool: List<PoolTrack>, val byId: Map<String, PoolTrack>, val builtAt: Long,
+                        val owner: String = ProfileScope.DEFAULT, val foreign: Set<String> = emptySet())
 
     fun estimator(ctx: Context): VibeEstimator = est ?: synchronized(this) {
         est ?: VibeEstimator(corrections = VibeCorrections.decode(V2Settings.get(ctx).corrections)).also { est = it }
     }
 
+    /** True when this profile already has a warm snapshot (the switch sheet says "ready" instead of "loading"). */
+    fun isWarm(profileId: String): Boolean = snaps[profileId]?.let { System.currentTimeMillis() - it.builtAt < 10 * 60_000L } == true
+
+    /** A deleted profile's caches go with it. */
+    fun forget(profileId: String) { snaps.remove(profileId); ests.remove(profileId); personalCaches.remove(profileId) }
+
     fun now(): Long = DiscoverHooks.nowTs()
 
     // ------------------------------------------------------------------ pool
     suspend fun snapshot(ctx: Context, db: MusicDatabase, force: Boolean = false): Snapshot = withContext(Dispatchers.IO) {
-        snap?.let { if (!force && System.currentTimeMillis() - it.builtAt < 10 * 60_000L) return@withContext it }
+        val owner = pid()
+        snaps[owner]?.let { if (!force && System.currentTimeMillis() - it.builtAt < 10 * 60_000L) return@withContext it }
         val app = ctx.applicationContext
         val repo = DiscoverRepository(app, db)
-        val history = repo.loadHistory()
+        val iso = repo.loadIsolated(ProfileScope.historyOwner())
+        val history = iso.history
         val nowTs = now()
         val profile = ProfileBuilder.build(history, nowTs)
         val e = estimator(app)
@@ -123,9 +143,10 @@ object V2Engine {
         }
         for (t in history.tracks.values) add(t, null)
         val known = history.tracks.keys
-        for (item in repo.cached()) if (item.track.id !in known) add(item.track, 0.0)
+        for (item in repo.cached()) if (item.track.id !in known && item.track.id !in iso.foreign) add(item.track, 0.0)
         val byId = pool.associateBy { it.track.id }
-        Snapshot(history, profile, pool, byId, System.currentTimeMillis()).also { snap = it }
+        // stored under the profile it was built for, even if the user switched while it was building
+        Snapshot(history, profile, pool, byId, System.currentTimeMillis(), owner, iso.foreign).also { snaps[owner] = it }
     }
 
     fun invalidate() { snap = null }
@@ -192,7 +213,7 @@ object V2Engine {
         }
         val extra = synchronized(got) { got.toList() }
         if (extra.isEmpty()) return s.pool
-        return s.pool + extra.distinctBy { it.id }.filter { it.id !in s.byId && it.title.isNotBlank() }.map { poolTrack(ctx, it, s) }
+        return s.pool + extra.distinctBy { it.id }.filter { it.id !in s.byId && it.title.isNotBlank() }.filter { it.id !in s.foreign }.map { poolTrack(ctx, it, s) }
     }
 
     private val presetSeeds: Map<MoodPreset, List<String>> = mapOf(
@@ -212,7 +233,7 @@ object V2Engine {
     private suspend fun withOnline(ctx: Context, s: Snapshot, preset: MoodPreset?, familiarNew: Double): List<PoolTrack> {
         if (preset == null || familiarNew > 0.8) return s.pool
         val extra = runCatching { searchMany(presetSeeds[preset].orEmpty()) }.getOrDefault(emptyList())
-        return s.pool + extra.filter { it.id !in s.byId }.map { poolTrack(ctx, it, s) }
+        return s.pool + extra.filter { it.id !in s.byId }.filter { it.id !in s.foreign }.map { poolTrack(ctx, it, s) }
     }
 
     // ------------------------------------------------------------------ rules
@@ -259,7 +280,8 @@ object V2Engine {
         return MixShaping.apply(list, o, heard, favTracks, fav, DayClock.dateTime(now()).hour)
     }
 
-    fun resetLearning(ctx: Context) { est = null; snap = null; activeMix = null }
+    /** On a profile switch: nothing is recomputed; the new profile's own caches are used (13.7.0.10). */
+    fun resetLearning(ctx: Context) { activeMix = null }
 
     // ------------------------------------------------------------------ mixes
     suspend fun mood(ctx: Context, db: MusicDatabase, preset: MoodPreset?, sliders: Sliders = Sliders(), size: Int = 30): BuiltMix = withContext(Dispatchers.Default) {
@@ -364,7 +386,8 @@ object V2Engine {
     /** 13.7.0.9: today's personal mixes (rotate daily), built once per day. */
     suspend fun personalMixes(ctx: Context, db: MusicDatabase, force: Boolean = false): List<BuiltMix> = withContext(Dispatchers.Default) {
         val day = DayClock.dayKey(now())
-        personalCache?.let { if (!force && it.first == day && it.second.isNotEmpty()) return@withContext it.second }
+        val owner = pid()
+        personalCaches[owner]?.let { if (!force && it.first == day && it.second.isNotEmpty()) return@withContext it.second }
         val s = snapshot(ctx, db)
         val pool = if (V2Settings.get(ctx).onlineNew) dailyOnline(ctx, s, null) else s.pool
         val all = PersonalMixes.all(s.history, pool, now(), VibeMixer(Random(day)))
@@ -374,7 +397,7 @@ object V2Engine {
             val ok = rules.filter(m.tracks, now())
             if (ok.size < PersonalMixes.MIN_SIZE) null else BuiltMix("${m.emoji} ${m.titleHe}", ok.map { it.track }, null, m.subtitleHe)
         }
-        personalCache = day to out
+        personalCaches[owner] = day to out
         out
     }
 
@@ -382,7 +405,7 @@ object V2Engine {
         val s = snapshot(ctx, db)
         val rel = runCatching { related(current.id) }.getOrDefault(emptyList())
         val relIds = rel.map { it.id }.toSet()
-        val pool = s.pool + rel.filter { it.id !in s.byId }.map { poolTrack(ctx, it, s) }
+        val pool = s.pool + rel.filter { it.id !in s.byId }.filter { it.id !in s.foreign }.map { poolTrack(ctx, it, s) }
         val cur = poolTrack(ctx, current, s)
         val out = mixer(ctx).reshape(cur, pool, action, 20, relIds)
         val title = when (action) { VibeAction.MORE_LIKE_THIS -> "עוד כזה"; VibeAction.CHANGE_VIBE -> "וייב חדש"; VibeAction.ENERGY_UP -> "אנרגיה ↑" }
@@ -398,7 +421,7 @@ object V2Engine {
     suspend fun tasteMix(ctx: Context, db: MusicDatabase, preset: TastePreset, minutes: Int = 60): BuiltMix = withContext(Dispatchers.Default) {
         val s = snapshot(ctx, db)
         val seeds = preset.seeds.shuffled(random).take(3)
-        val found = searchMany(seeds, 25).map { poolTrack(ctx, it, s).copy(familiarity = 0.0) }
+        val found = searchMany(seeds, 25).filter { it.id !in s.foreign }.map { poolTrack(ctx, it, s).copy(familiarity = 0.0) }
         val rules = ruleEngine(ctx, s)
         val allowed = found.filter { rules.violation(it.track, it.vibe, now()) == null }
         val ordered = mixer(ctx).tripLength(allowed, minutes, preset.target).ifEmpty { mixer(ctx).build(allowed, preset.target, 20) }
@@ -474,7 +497,7 @@ object V2Engine {
         val yy = decade % 100
         val heb = if (decade >= 2000) "שנות ה-${decade}" else "שנות ה-${"%02d".format(yy)}"
         val seeds = listOf("${decade}s hits", "להיטים ישראליים $heb", "best of ${decade}s", "מזרחית $heb")
-        val found = searchMany(seeds, 25).map { poolTrack(ctx, it, s) }
+        val found = searchMany(seeds, 25).filter { it.id !in s.foreign }.map { poolTrack(ctx, it, s) }
         finish(ctx, s, mixer(ctx).diversify(found.shuffled(random), 30), "📻 עשור: $heb", null, "חוגת העשורים")
     }
 
@@ -483,7 +506,7 @@ object V2Engine {
         val q = AskMusic.parse(text)
         val s = snapshot(ctx, db)
         val online = runCatching { searchMany(listOfNotNull(text.trim().takeIf { it.isNotEmpty() }) + (q.preset?.let { presetSeeds[it].orEmpty() } ?: emptyList()), 20) }.getOrDefault(emptyList())
-        val pool = s.pool + online.filter { it.id !in s.byId }.map { poolTrack(ctx, it, s) }
+        val pool = s.pool + online.filter { it.id !in s.byId }.filter { it.id !in s.foreign }.map { poolTrack(ctx, it, s) }
         val label = if (q.matched.isEmpty()) "🗣️ \"${text.take(24)}\"" else "🗣️ " + q.matched.joinToString(" · ")
         if (q.minutes != null) {
             val rules = ruleEngine(ctx, s)
@@ -499,7 +522,7 @@ object V2Engine {
     suspend fun recs(ctx: Context, db: MusicDatabase, n: Int, exclude: Set<String> = emptySet()): List<TrackMeta> = withContext(Dispatchers.Default) {
         val s = snapshot(ctx, db)
         val fromDiscover = runCatching { DiscoverRepository(ctx.applicationContext, db).cached().map { it.track } }.getOrDefault(emptyList())
-        val pool = (fromDiscover.map { poolTrack(ctx, it, s) } + s.pool.filter { it.familiarity < 0.2 })
+        val pool = (fromDiscover.filter { it.id !in s.foreign }.map { poolTrack(ctx, it, s) } + s.pool.filter { it.familiarity < 0.2 })
             .filter { it.track.id !in exclude }.distinctBy { it.track.id }
         val rules = ruleEngine(ctx, s)
         shape(ctx, s, pool.filter { rules.violation(it.track, it.vibe, now()) == null }.sortedByDescending { it.affinity }.take(n * 3).shuffled(random))
@@ -540,7 +563,7 @@ object V2Engine {
         val merged = Blend.merge(mine, friend, 40)
         val s = snapshot(ctx, db)
         val rules = ruleEngine(ctx, s)
-        val ok = merged.map { poolTrack(ctx, it, s) }.filter { rules.violation(it.track, it.vibe, now()) == null }
+        val ok = merged.filter { it.id !in s.foreign }.map { poolTrack(ctx, it, s) }.filter { rules.violation(it.track, it.vibe, now()) == null }
         BuiltMix("🤝 Blend: ${mine.name} + ${friend.name}", ok.map { it.track }, null, "התאמה של ${Blend.matchPct(mine, friend)}%")
     }
 

@@ -126,6 +126,10 @@ private fun TrackMeta.toMediaItem() = SongItem(
 @Composable
 fun DiscoverForYouSection() {
     val vm: DiscoverViewModel = hiltViewModel()
+    // 13.7.0.10: the row follows the active profile (its own cached list)
+    val profVersion by com.metrolist.music.discover.v2.V2Settings.version.collectAsStateWithLifecycle()
+    val profId = remember(profVersion) { com.metrolist.music.discover.engine.ProfileScope.active }
+    LaunchedEffect(profId) { vm.onProfile(profId) }
     val state by vm.state.collectAsStateWithLifecycle()
     val playerConnection = LocalPlayerConnection.current ?: return
     var showSheet by remember { mutableStateOf(false) }

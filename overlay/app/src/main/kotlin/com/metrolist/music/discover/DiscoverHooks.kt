@@ -42,12 +42,14 @@ object DiscoverHooks {
                 if (!com.metrolist.music.discover.engine.Recording.shouldRecord(
                         com.metrolist.music.discover.v2.V2Settings.get(app).secret, com.metrolist.music.discover.engine.ProfileScope.guest, historyPaused)) return@execute
                 val store = DiscoverStore.get(app)
+                // 13.7.0.10: every play is recorded with the profile it happened in (the guest never records)
+                val owner = com.metrolist.music.discover.engine.ProfileScope.recordOwner() ?: return@execute
                 val durationMs = if (durSec > 0) durSec * 1000L else songDurationMs(database, songId)
                 val th = DiscoverRepository.thresholds(store)
                 val e = PlayEvent(songId, ts, playedMs, durationMs)
                 val outcome = ProfileBuilder.outcome(e, History(emptyMap(), emptyList()), th.first, th.second, th.third)
-                val rec = store.rec(songId, ts)
-                store.addPlay(songId, ts, playedMs, durationMs, rec != null, outcome.name)
+                val rec = store.rec(songId, ts, profile = owner)
+                store.addPlay(songId, ts, playedMs, durationMs, rec != null, outcome.name, owner)
                 runCatching { com.metrolist.music.discover.v2.V2Engine.onPlayed(app, songId, playedMs, durationMs) } // v2: vibe self-correction
                 if (rec != null) {
                     val tuner = SelfTuner(DiscoverConfig().weights, DiscoverConfig().exploreRatio)

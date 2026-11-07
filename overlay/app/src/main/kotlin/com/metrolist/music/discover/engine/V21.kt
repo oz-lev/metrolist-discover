@@ -39,12 +39,23 @@ object ProfileScope {
     @Volatile var guest: Boolean = false
 
     private val GLOBAL = setOf("v2.colors", "v2.offline.day", "v2.offline.ids")
-    private val SCOPED_EXTRA = setOf("tuner.state", "tuner.likeAwarded")
+    /** 13.7.0.10: Discover's caches, "not for me" lists and skip thresholds are per profile too (they leaked before). */
+    private val SCOPED_EXTRA = setOf("tuner.state", "tuner.likeAwarded",
+        "discover.cache", "discover.cacheTs", "mixes.cache", "mixes.cacheTs",
+        "discover.hiddenSongs", "discover.hiddenArtists", "profile.thresholds")
+    /** keys copied once from the shared (main) value into every existing profile when 13.7.0.10 first runs */
+    val MIGRATE_COPY = listOf("discover.hiddenSongs", "discover.hiddenArtists", "profile.thresholds")
 
     fun scoped(k: String): Boolean =
         k !in GLOBAL && !k.startsWith("g.") && !k.startsWith("p.") && (k.startsWith("v2.") || k.startsWith("v21.") || k in SCOPED_EXTRA)
 
     fun key(k: String, profile: String = active): String = if (profile == DEFAULT || !scoped(k)) k else "p.$profile.$k"
+
+    /** 13.7.0.10: whose listening history the engine reads. The guest records nothing and borrows the main taste read-only. */
+    fun historyOwner(profile: String = active, isGuest: Boolean = guest): String = if (isGuest) DEFAULT else profile
+
+    /** Whose a new play is (null = record nothing: the guest). */
+    fun recordOwner(profile: String = active, isGuest: Boolean = guest): String? = if (isGuest) null else profile
 }
 
 object Profiles {

@@ -28,6 +28,9 @@ import com.metrolist.music.discover.engine.StatsFacts
 import com.metrolist.music.discover.engine.TasteProfile
 import com.metrolist.music.discover.engine.TrackMeta
 import com.metrolist.music.discover.engine.TunerState
+import com.metrolist.music.discover.engine.OwnedPlay
+import com.metrolist.music.discover.engine.ProfileIsolation
+import com.metrolist.music.discover.engine.ProfileScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -77,7 +80,13 @@ class DiscoverRepository(private val context: Context, private val database: Mus
     fun exploreRatio(): Double = tuner.exploreRatio(tunerState())
 
     // ---------------------------------------------------------------- history
-    fun loadHistory(): History {
+    /** 13.7.0.10: the history one profile may see, and the songs that only ever happened in other profiles. */
+    data class Isolated(val history: History, val foreign: Set<String>, val profile: String)
+
+    /** What the engine learns from: only this profile's own listens and signals (see ProfileIsolation). */
+    fun loadHistory(): History = loadIsolated().history
+
+    fun loadIsolated(profile: String = ProfileScope.historyOwner()): Isolated {
         val db = database.openHelper.readableDatabase
         val artists = HashMap<String, MutableList<Pair<String, String>>>()
         db.query("SELECT m.songId, m.artistId, a.name FROM song_artist_map m JOIN artist a ON a.id = m.artistId ORDER BY m.songId, m.position").use { c ->
@@ -92,20 +101,14 @@ class DiscoverRepository(private val context: Context, private val database: Mus
                     if (c.isNull(3)) null else c.getString(3), if (c.isNull(2)) -1 else c.getInt(2), if (c.isNull(4)) null else c.getString(4))
             }
         }
-        val plays = ArrayList<PlayEvent>()
-        val eventKeys = HashSet<String>()
+        val events = ArrayList<PlayEvent>()
         db.query("SELECT songId, timestamp, playTime FROM event").use { c ->
-            while (c.moveToNext()) {
-                val e = PlayEvent(c.getString(0), c.getLong(1), c.getLong(2))
-                plays += e; eventKeys += e.trackId + "@" + e.timestampMs / 900_000L
-            }
+            while (c.moveToNext()) events += PlayEvent(c.getString(0), c.getLong(1), c.getLong(2))
         }
-        // our own log adds what Metrolist does not keep: the short (skipped) sessions
-        for (p in store.plays()) {
-            val k = p.ts / 900_000L
-            val dup = eventKeys.contains(p.songId + "@" + k) || eventKeys.contains(p.songId + "@" + (k - 1)) || eventKeys.contains(p.songId + "@" + (k + 1))
-            if (!dup) plays += PlayEvent(p.songId, p.ts, p.playedMs, p.durationMs, p.fromDiscover)
-        }
+        // our own log adds what Metrolist does not keep (the short, skipped sessions) and says whose each listen was
+        val own = store.allPlays().map { p -> OwnedPlay(PlayEvent(p.songId, p.ts, p.playedMs, p.durationMs, p.fromDiscover), p.profileId) }
+        val marks = store.timeline()
+        val plays = ProfileIsolation.mergePlays(events, own, marks)
         val signals = ArrayList<ExplicitSignal>()
         fun ts(c: android.database.Cursor, i: Int): Long? = if (c.isNull(i)) null else c.getLong(i)
         db.query("SELECT id, likedDate FROM song WHERE liked = 1").use { c -> while (c.moveToNext()) signals += ExplicitSignal(c.getString(0), SignalKind.LIKE, ts(c, 1)) }
@@ -116,14 +119,16 @@ class DiscoverRepository(private val context: Context, private val database: Mus
         db.query("SELECT songId, relatedSongId FROM related_song_map ORDER BY id").use { c ->
             while (c.moveToNext()) related.getOrPut(c.getString(0)) { ArrayList() } += c.getString(1)
         }
-        return History(tracks, plays, signals, related)
+        val owned = ProfileIsolation.ownSignals(signals, marks)
+        return Isolated(ProfileIsolation.isolate(tracks, plays, owned, related, profile), ProfileIsolation.foreignTracks(plays, owned, profile), profile)
     }
 
     // ---------------------------------------------------------------- recommendations
     data class Result(val items: List<DiscoverItem>, val coldStart: Boolean)
 
     suspend fun refresh(online: Boolean = true): Result = withContext(Dispatchers.IO) {
-        val history = loadHistory()
+        val iso = loadIsolated()
+        val history = iso.history
         val now = DiscoverHooks.nowTs()
         val state = tunerState()
         // v2 weird settings: skip-penalty strength scales the skip weight, boldness moves the explore ratio
@@ -137,7 +142,7 @@ class DiscoverRepository(private val context: Context, private val database: Mus
         if (profile.isColdStart) return@withContext Result(emptyList(), true)
         val hiddenS = hiddenSongs(); val hiddenA = hiddenArtists()
         val candidates = (CandidateBuilder.offline(history, profile) + (if (online) onlineCandidates(history, profile) else emptyList()))
-            .filter { it.track.id !in hiddenS && it.track.mainArtist !in hiddenA }
+            .filter { it.track.id !in hiddenS && it.track.mainArtist !in hiddenA && it.track.id !in iso.foreign }
         val recsAll = engine.recommend(history, candidates, now, n = config.listSize + 10, weights = weights,
             exploreRatio = v2.effectiveExplore(tuner.exploreRatio(state)), profile = profile)
         // v2 rules (day/hour blocks, < 3 min, no remix/live, turtle mode, max Mizrahi %) apply to Discover too

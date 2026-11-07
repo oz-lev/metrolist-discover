@@ -66,6 +66,23 @@ class DiscoverViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 13.7.0.10: the profile changed. Show that profile's own cached Discover list and mixes at once (each profile has
+     * its own cache now), and refresh only if it has none or it is stale. The previous profile's list is never shown.
+     */
+    @Volatile private var shownFor: String = com.metrolist.music.discover.engine.ProfileScope.active
+    fun onProfile(profileId: String) {
+        if (profileId == shownFor) return
+        shownFor = profileId
+        viewModelScope.launch {
+            val cached = withContext(Dispatchers.IO) { repo.cached() to repo.cacheAgeMs() }
+            val mixes = withContext(Dispatchers.IO) { runCatching { repo.mixes() }.getOrDefault(emptyList()) }
+            if (com.metrolist.music.discover.engine.ProfileScope.active != profileId) return@launch
+            _state.value = _state.value.copy(items = cached.first, mixes = mixes, coldStart = false, hiddenCount = withContext(Dispatchers.IO) { repo.hiddenCount() })
+            if (cached.first.isEmpty() || cached.second > 3L * 3_600_000L) { _state.value = _state.value.copy(loading = false); refresh() }
+        }
+    }
+
     /** v2.1 "stats bubble frequency": every open / every 3rd open / once a day / never. */
     private fun bubbleGate(): Boolean = runCatching {
         val store = DiscoverStore.get(context)
@@ -82,7 +99,9 @@ class DiscoverViewModel @Inject constructor(
         if (_state.value.loading) return
         _state.value = _state.value.copy(loading = true)
         viewModelScope.launch {
+            val forProfile = com.metrolist.music.discover.engine.ProfileScope.active
             val r = runCatching { repo.refresh(online = true) }.recoverCatching { repo.refresh(online = false) }.getOrNull()
+            if (com.metrolist.music.discover.engine.ProfileScope.active != forProfile) { _state.value = _state.value.copy(loading = false); if (_state.value.items.isEmpty()) refresh(); return@launch }
             _state.value = _state.value.copy(
                 loading = false,
                 items = r?.items?.ifEmpty { _state.value.items } ?: _state.value.items,

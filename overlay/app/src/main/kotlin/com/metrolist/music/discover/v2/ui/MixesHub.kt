@@ -26,6 +26,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -84,7 +85,11 @@ fun MixesHubScreen(onBack: () -> Unit) {
     var tripMin by remember { mutableFloatStateOf(25f) }
     // 13.7.0.9: today's personal mixes (they rotate every day)
     var personal by remember { mutableStateOf<List<BuiltMix>>(emptyList()) }
-    LaunchedEffect(Unit) { personal = runCatching { V2Engine.personalMixes(ctx, db) }.getOrDefault(emptyList()) }
+    // 13.7.0.10: per profile - reloads (from that profile's own cache) when the profile changes
+    val hubVersion by com.metrolist.music.discover.v2.V2Settings.version.collectAsStateWithLifecycle()
+    val hubNav = com.metrolist.music.LocalNavController.current
+    val hubProfile = remember(hubVersion) { com.metrolist.music.discover.engine.ProfileScope.active }
+    LaunchedEffect(hubProfile) { personal = emptyList(); personal = runCatching { V2Engine.personalMixes(ctx, db) }.getOrDefault(emptyList()) }
 
     fun run(label: String, block: suspend () -> BuiltMix) {
         if (busy != null) return
@@ -97,7 +102,7 @@ fun MixesHubScreen(onBack: () -> Unit) {
     }
 
     V2Page(title = "מרכז המיקסים 🎛️", subtitle = "מסובבים, מזיזים, מנגנים", onBack = onBack) {
-        item(key = "profiles") { com.metrolist.music.discover.v21.ui.ProfileSwitcherRow(Modifier.padding(vertical = 4.dp)) }
+        item(key = "profiles") { com.metrolist.music.discover.v21.ui.ProfileChip(Modifier.padding(vertical = 4.dp), onManage = { hubNav.navigate(V2Routes.PROFILES) }) }
         item(key = "dial") {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 MoodDial(selected = dial, onSelect = { dial = it; it.target.energy?.let { e -> energy = e.toFloat() } })

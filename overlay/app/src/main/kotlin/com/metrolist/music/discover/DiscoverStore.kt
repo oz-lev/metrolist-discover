@@ -17,49 +17,82 @@ import com.metrolist.music.discover.engine.Slot
  * plays: every playback session, including the short ones Metrolist does not keep (< 30 s) = skips.
  * recs:  what Discover showed, with the feature vector it was ranked on (for the self-tuner).
  * kv:    settings, tuner state, counters, caches.
+ * 13.7.0.10 (db v2): plays and recs carry the profile they belong to; every existing row is the main profile's ("me").
  */
 class DiscoverStore private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "metrolist_discover.db", null, 1) {
+    SQLiteOpenHelper(context.applicationContext, "metrolist_discover.db", null, 2) {
 
     override fun onCreate(db: SQLiteDatabase) {
-        db.execSQL("CREATE TABLE plays (id INTEGER PRIMARY KEY AUTOINCREMENT, songId TEXT NOT NULL, ts INTEGER NOT NULL, playedMs INTEGER NOT NULL, durationMs INTEGER NOT NULL, fromDiscover INTEGER NOT NULL DEFAULT 0, outcome TEXT)")
+        db.execSQL("CREATE TABLE plays (id INTEGER PRIMARY KEY AUTOINCREMENT, songId TEXT NOT NULL, ts INTEGER NOT NULL, playedMs INTEGER NOT NULL, durationMs INTEGER NOT NULL, fromDiscover INTEGER NOT NULL DEFAULT 0, outcome TEXT, profileId TEXT NOT NULL DEFAULT 'me')")
         db.execSQL("CREATE INDEX plays_song ON plays(songId)")
         db.execSQL("CREATE INDEX plays_ts ON plays(ts)")
-        db.execSQL("CREATE TABLE recs (songId TEXT PRIMARY KEY, ts INTEGER NOT NULL, slot TEXT NOT NULL, features TEXT NOT NULL)")
+        db.execSQL("CREATE INDEX plays_profile ON plays(profileId, ts)")
+        db.execSQL("CREATE TABLE recs (profileId TEXT NOT NULL DEFAULT 'me', songId TEXT NOT NULL, ts INTEGER NOT NULL, slot TEXT NOT NULL, features TEXT NOT NULL, PRIMARY KEY (profileId, songId))")
         db.execSQL("CREATE TABLE kv (k TEXT PRIMARY KEY, v TEXT)")
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    /** 13.7.0.10: v1 -> v2 adds the owner profile. Nothing is dropped: every existing play and rec becomes the main profile's. */
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            db.beginTransaction()
+            try {
+                db.execSQL("ALTER TABLE plays ADD COLUMN profileId TEXT NOT NULL DEFAULT 'me'")
+                db.execSQL("CREATE INDEX IF NOT EXISTS plays_profile ON plays(profileId, ts)")
+                db.execSQL("CREATE TABLE recs2 (profileId TEXT NOT NULL DEFAULT 'me', songId TEXT NOT NULL, ts INTEGER NOT NULL, slot TEXT NOT NULL, features TEXT NOT NULL, PRIMARY KEY (profileId, songId))")
+                db.execSQL("INSERT OR REPLACE INTO recs2 (profileId, songId, ts, slot, features) SELECT 'me', songId, ts, slot, features FROM recs")
+                db.execSQL("DROP TABLE recs")
+                db.execSQL("ALTER TABLE recs2 RENAME TO recs")
+                db.setTransactionSuccessful()
+            } finally { db.endTransaction() }
+        }
+    }
 
-    fun addPlay(songId: String, ts: Long, playedMs: Long, durationMs: Long, fromDiscover: Boolean, outcome: String?) {
+    fun addPlay(songId: String, ts: Long, playedMs: Long, durationMs: Long, fromDiscover: Boolean, outcome: String?, profileId: String = ProfileScope.active) {
         writableDatabase.insert("plays", null, ContentValues().apply {
             put("songId", songId); put("ts", ts); put("playedMs", playedMs); put("durationMs", durationMs)
-            put("fromDiscover", if (fromDiscover) 1 else 0); put("outcome", outcome)
+            put("fromDiscover", if (fromDiscover) 1 else 0); put("outcome", outcome); put("profileId", profileId)
         })
     }
 
-    data class StoredPlay(val songId: String, val ts: Long, val playedMs: Long, val durationMs: Long, val fromDiscover: Boolean, val outcome: String?)
+    data class StoredPlay(val songId: String, val ts: Long, val playedMs: Long, val durationMs: Long, val fromDiscover: Boolean, val outcome: String?, val profileId: String = ProfileScope.DEFAULT)
 
-    fun plays(sinceTs: Long = 0L): List<StoredPlay> {
+    /** Plays of one profile (13.7.0.10: the active profile's history owner by default; null = every profile). */
+    fun plays(sinceTs: Long = 0L, profile: String? = ProfileScope.historyOwner()): List<StoredPlay> {
         val out = ArrayList<StoredPlay>()
-        readableDatabase.rawQuery("SELECT songId, ts, playedMs, durationMs, fromDiscover, outcome FROM plays WHERE ts >= ? ORDER BY ts", arrayOf(sinceTs.toString())).use { c ->
-            while (c.moveToNext()) out += StoredPlay(c.getString(0), c.getLong(1), c.getLong(2), c.getLong(3), c.getInt(4) == 1, c.getString(5))
+        val sql = "SELECT songId, ts, playedMs, durationMs, fromDiscover, outcome, profileId FROM plays WHERE ts >= ?" + (if (profile != null) " AND profileId = ?" else "") + " ORDER BY ts"
+        val args = if (profile != null) arrayOf(sinceTs.toString(), profile) else arrayOf(sinceTs.toString())
+        readableDatabase.rawQuery(sql, args).use { c ->
+            while (c.moveToNext()) out += StoredPlay(c.getString(0), c.getLong(1), c.getLong(2), c.getLong(3), c.getInt(4) == 1, c.getString(5), c.getString(6) ?: ProfileScope.DEFAULT)
         }
         return out
     }
 
-    /** v2.1 auto-like: how many earlier listens of this song reached 85 % of its length. */
-    fun fullListens(songId: String): Int =
-        readableDatabase.rawQuery("SELECT COUNT(*) FROM plays WHERE songId = ? AND durationMs > 0 AND playedMs * 100 >= durationMs * 85", arrayOf(songId)).use { c ->
+    /** Every profile's plays, with their owner (the isolation layer needs all of them to know what is foreign). */
+    fun allPlays(): List<StoredPlay> = plays(0L, null)
+
+    fun deletePlaysOf(profile: String) { writableDatabase.delete("plays", "profileId = ?", arrayOf(profile)); writableDatabase.delete("recs", "profileId = ?", arrayOf(profile)) }
+
+    /** v2.1 auto-like: how many earlier listens of this song reached 85 % of its length (13.7.0.10: in this profile). */
+    fun fullListens(songId: String, profile: String = ProfileScope.historyOwner()): Int =
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM plays WHERE songId = ? AND profileId = ? AND durationMs > 0 AND playedMs * 100 >= durationMs * 85", arrayOf(songId, profile)).use { c ->
             if (c.moveToFirst()) c.getInt(0) else 0
         }
 
-    fun putRecs(recs: List<Triple<String, Slot, Features>>, ts: Long) {
+    // ---------------------------------------------------------------- 13.7.0.10 profile timeline
+    fun timeline(): List<com.metrolist.music.discover.engine.SwitchMark> = com.metrolist.music.discover.engine.ProfileTimeline.decode(rawGet(K_TIMELINE))
+    fun markSwitch(ts: Long, profileId: String) {
+        rawPut(K_TIMELINE, com.metrolist.music.discover.engine.ProfileTimeline.encode(com.metrolist.music.discover.engine.ProfileTimeline.append(timeline(), ts, profileId)))
+    }
+    fun reassignTimeline(fromId: String, toId: String) {
+        rawPut(K_TIMELINE, com.metrolist.music.discover.engine.ProfileTimeline.encode(com.metrolist.music.discover.engine.ProfileTimeline.reassign(timeline(), fromId, toId)))
+    }
+
+    fun putRecs(recs: List<Triple<String, Slot, Features>>, ts: Long, profile: String = ProfileScope.active) {
         val db = writableDatabase
         db.beginTransaction()
         try {
             for ((id, slot, f) in recs) db.insertWithOnConflict("recs", null, ContentValues().apply {
-                put("songId", id); put("ts", ts); put("slot", slot.name); put("features", f.encode())
+                put("profileId", profile); put("songId", id); put("ts", ts); put("slot", slot.name); put("features", f.encode())
             }, SQLiteDatabase.CONFLICT_REPLACE)
             db.delete("recs", "ts < ?", arrayOf((ts - 14L * 86_400_000L).toString()))
             db.setTransactionSuccessful()
@@ -67,8 +100,8 @@ class DiscoverStore private constructor(context: Context) :
     }
 
     /** The recommendation behind this song if Discover showed it in the last [withinMs]. */
-    fun rec(songId: String, nowTs: Long, withinMs: Long = 2L * 86_400_000L): Pair<Slot, Features>? =
-        readableDatabase.rawQuery("SELECT slot, features, ts FROM recs WHERE songId = ?", arrayOf(songId)).use { c ->
+    fun rec(songId: String, nowTs: Long, withinMs: Long = 2L * 86_400_000L, profile: String = ProfileScope.active): Pair<Slot, Features>? =
+        readableDatabase.rawQuery("SELECT slot, features, ts FROM recs WHERE songId = ? AND profileId = ?", arrayOf(songId, profile)).use { c ->
             if (!c.moveToFirst() || nowTs - c.getLong(2) > withinMs) null
             else Features.decode(c.getString(1))?.let { Slot.valueOf(c.getString(0)) to it }
         }
@@ -106,6 +139,7 @@ class DiscoverStore private constructor(context: Context) :
                     val list = com.metrolist.music.discover.engine.Profiles.decode(it.rawGet("g.profiles"))
                     list.firstOrNull { p -> p.id == id }?.let { p -> ProfileScope.active = p.id; ProfileScope.guest = p.guest }
                 }
+                runCatching { it.migrateIsolation() }
             }
         }
 
@@ -119,5 +153,25 @@ class DiscoverStore private constructor(context: Context) :
         const val K_MIXES = "mixes.cache"
         const val K_MIXES_TS = "mixes.cacheTs"
         const val K_LIKE_AWARDED = "tuner.likeAwarded"
+        const val K_TIMELINE = "g.timeline"
+        const val K_ISO = "g.iso1310"
+    }
+
+    /**
+     * 13.7.0.10, once: the timeline starts now (everything before it stays the main profile's, so no history moves or
+     * disappears); if another profile is active right now it owns from this moment. The "not for me" lists and skip
+     * thresholds used to be shared, so every existing profile gets its own copy of them instead of losing them.
+     */
+    private fun migrateIsolation() {
+        if (rawGet(K_ISO) != null) return
+        val now = DiscoverHooks.nowTs()
+        if (ProfileScope.active != ProfileScope.DEFAULT) markSwitch(now, ProfileScope.active)
+        val ids = com.metrolist.music.discover.engine.Profiles.decode(rawGet("g.profiles")).map { it.id }.filter { it != ProfileScope.DEFAULT }
+        for (id in ids) for (k in ProfileScope.MIGRATE_COPY) {
+            val v = rawGet(k) ?: continue
+            val pk = ProfileScope.key(k, id)
+            if (rawGet(pk) == null) rawPut(pk, v)
+        }
+        rawPut(K_ISO, now.toString())
     }
 }

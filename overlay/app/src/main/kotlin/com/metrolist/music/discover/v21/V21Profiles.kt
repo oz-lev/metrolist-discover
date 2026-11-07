@@ -23,12 +23,14 @@ import androidx.datastore.preferences.core.edit
 
 /**
  * Switchable profiles (פרופילים). Each profile has its own copy of every v2/v2.1 setting (theme included) and its own
- * learning state (self-tuner + vibe corrections) - see ProfileScope for the key mapping. Everything lives in Discover's own
+ * learning state (self-tuner + vibe corrections) - see ProfileScope for the key mapping. 13.7.0.10: and its own history,
+ * taste, Discover list, mixes and caches (ProfileIsolation): a song heard in one profile never reaches another. Everything lives in Discover's own
  * kv table; Metrolist's schema is untouched. The guest profile never records: while it is active Metrolist's own
  * "pause listen history" is switched on (and restored afterwards) and Discover's own play log is skipped.
  */
 object V21Profiles {
     private val io = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val DUP_SKIP = setOf("discover.cache", "discover.cacheTs", "mixes.cache", "mixes.cacheTs", "v21.qhist", "v21.opens", "v21.bubbleDay")
 
     fun list(ctx: Context): List<DProfile> = Profiles.decode(DiscoverStore.get(ctx).rawGet("g.profiles"))
     fun active(ctx: Context): DProfile { DiscoverStore.get(ctx); return list(ctx).firstOrNull { it.id == ProfileScope.active } ?: Profiles.PRESETS[0] }
@@ -50,6 +52,8 @@ object V21Profiles {
         ProfileScope.active = p.id
         ProfileScope.guest = p.guest
         store.rawPut("g.activeProfile", p.id)
+        // 13.7.0.10: from this moment Metrolist's own rows (plays, likes, downloads) belong to this profile
+        store.markSwitch(V2Engine.now(), p.id)
         if (p.guest != wasGuest) guestHistory(app, entering = p.guest)
         V2Engine.resetLearning(app)
         V2Settings.get(app).bump()
@@ -105,9 +109,11 @@ object V21Profiles {
         val p = create(ctx, src.name + " 2", src.emoji, src.color).copy(guest = src.guest)
         saveList(ctx, list(ctx).map { if (it.id == p.id) p else it })
         val entries = if (src.id == ProfileScope.DEFAULT) {
-            listOf("v2.", "v21.", "tuner.").flatMap { store.rawEntries(it).entries }.filter { ProfileScope.scoped(it.key) }.associate { it.key to it.value }
+            store.rawEntries("").filter { ProfileScope.scoped(it.key) }
         } else store.rawEntries("p.${src.id}.").mapKeys { it.key.removePrefix("p.${src.id}.") }
-        entries.forEach { (k, v) -> store.rawPut(ProfileScope.key(k, p.id), v) }
+        // settings and learned weights are copied; the listening history and the caches built from it are not
+        // (13.7.0.10: a copy starts with its own, empty history, so nothing of the source leaks into it later)
+        entries.filterKeys { it !in DUP_SKIP }.forEach { (k, v) -> store.rawPut(ProfileScope.key(k, p.id), v) }
         return p
     }
 
@@ -117,8 +123,13 @@ object V21Profiles {
         if (!Profiles.canDelete(id)) return
         if (ProfileScope.active == id) switchTo(ctx, ProfileScope.DEFAULT)
         saveList(ctx, Profiles.delete(list(ctx), id))
-        DiscoverStore.get(ctx).rawDeletePrefix("p.$id.")
-        DiscoverStore.get(ctx).rawPut("g.init.$id", null)
+        val store = DiscoverStore.get(ctx)
+        store.rawDeletePrefix("p.$id.")
+        store.rawPut("g.init.$id", null)
+        // 13.7.0.10: its listens go with it. Its stretches of the timeline become a tombstone no profile reads, so they do
+        // not fall into the main profile either. Metrolist's own history is untouched.
+        runCatching { store.deletePlaysOf(id); store.reassignTimeline(id, "x.$id") }
+        V2Engine.forget(id)
     }
 
     /** Called every 30 s by the service: applies the auto-switch schedule (edge triggered). */

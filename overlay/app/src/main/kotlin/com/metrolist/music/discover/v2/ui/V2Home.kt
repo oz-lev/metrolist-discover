@@ -68,7 +68,12 @@ import com.metrolist.music.discover.v2.V2Settings
 import kotlinx.coroutines.launch
 
 /** Remembered across recompositions / tab switches so the hero does not rebuild every time. */
-private object HomeCache { var daily: BuiltMix? = null; var builtAt = 0L; var match: Map<String, Int> = emptyMap(); var personal: List<BuiltMix> = emptyList() }
+private object HomeCache {
+    // 13.7.0.10: one entry per profile, so switching shows that profile's own mixes at once and never the previous one's
+    class Entry { var daily: BuiltMix? = null; var builtAt = 0L; var match: Map<String, Int> = emptyMap(); var personal: List<BuiltMix> = emptyList() }
+    private val byProfile = HashMap<String, Entry>()
+    fun of(id: String): Entry = synchronized(byProfile) { byProfile.getOrPut(id) { Entry() } }
+}
 
 @Composable
 fun V2HomeSection() {
@@ -80,25 +85,31 @@ fun V2HomeSection() {
     val state by vm.state.collectAsStateWithLifecycle()
     val version by V2Settings.version.collectAsStateWithLifecycle()
     val settings = remember(version) { V2Settings.get(ctx) }
+    val profileId = remember(version) { com.metrolist.music.discover.engine.ProfileScope.active }
+    val cache = remember(profileId) { HomeCache.of(profileId) }
     val scope = rememberCoroutineScope()
-    var daily by remember { mutableStateOf(HomeCache.daily) }
-    var match by remember { mutableStateOf(HomeCache.match) }
+    var daily by remember(profileId) { mutableStateOf(cache.daily) }
+    var match by remember(profileId) { mutableStateOf(cache.match) }
     var busy by remember { mutableStateOf<String?>(null) }
     var showSheet by remember { mutableStateOf(false) }
     var notForMe by remember { mutableStateOf<DiscoverItem?>(null) }
-    var personal by remember { mutableStateOf(HomeCache.personal) }
+    var personal by remember(profileId) { mutableStateOf(cache.personal) }
 
     LaunchedEffect(version) {
-        if (daily == null || System.currentTimeMillis() - HomeCache.builtAt > 30 * 60_000L || version > 0) {
-            runCatching { V2Engine.daily(ctx, db) }.getOrNull()?.let { daily = it; HomeCache.daily = it; HomeCache.builtAt = System.currentTimeMillis() }
+        if (daily == null || System.currentTimeMillis() - cache.builtAt > 30 * 60_000L || version > 0) {
+            runCatching { V2Engine.daily(ctx, db) }.getOrNull()?.let { m ->
+                if (com.metrolist.music.discover.engine.ProfileScope.active == profileId) { daily = m; cache.daily = m; cache.builtAt = System.currentTimeMillis() }
+            }
         }
     }
-    // 13.7.0.9: today's personal mixes (rotate daily)
-    LaunchedEffect(Unit) {
-        runCatching { V2Engine.personalMixes(ctx, db) }.getOrNull()?.let { personal = it; HomeCache.personal = it }
+    // 13.7.0.9: today's personal mixes (rotate daily); 13.7.0.10: per profile
+    LaunchedEffect(profileId) {
+        runCatching { V2Engine.personalMixes(ctx, db) }.getOrNull()?.let { if (com.metrolist.music.discover.engine.ProfileScope.active == profileId) { personal = it; cache.personal = it } }
     }
+    // 13.7.0.10: the Discover row follows the profile (its own cached list first, refreshed only if stale)
+    LaunchedEffect(profileId) { vm.onProfile(profileId) }
     LaunchedEffect(state.items) {
-        if (state.items.isNotEmpty()) runCatching { V2Engine.matchPercents(ctx, state.items.map { it.track.id }) }.getOrNull()?.let { match = it; HomeCache.match = it }
+        if (state.items.isNotEmpty()) runCatching { V2Engine.matchPercents(ctx, state.items.map { it.track.id }) }.getOrNull()?.let { match = it; cache.match = it }
     }
 
     fun run(label: String, block: suspend () -> BuiltMix) {
@@ -127,8 +138,8 @@ fun V2HomeSection() {
                 RoundIcon("🏆") { nav.navigate(V2Routes.PROFILE) }
                 RoundIcon("🧪") { nav.navigate(V2Routes.WEIRD) }
             }
-            // v2.1: quick profile switcher
-            com.metrolist.music.discover.v21.ui.ProfileSwitcherRow(Modifier.padding(top = 6.dp), onManage = { nav.navigate(V2Routes.PROFILES) })
+            // 13.7.0.10: one-tap profile chip -> quick switcher sheet
+            com.metrolist.music.discover.v21.ui.ProfileChip(Modifier.padding(top = 6.dp), onManage = { nav.navigate(V2Routes.PROFILES) })
 
             // mood chips
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
