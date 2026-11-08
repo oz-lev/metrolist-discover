@@ -75,6 +75,16 @@ fun ProfileScreen(onBack: () -> Unit) {
                 Stat("⏱️", "${p.totalMinutes / 60}", "שעות האזנה", Modifier.weight(1f))
             }
         }
+        item(key = "full_stats") {
+            val nav = com.metrolist.music.LocalNavController.current
+            V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), onClick = { nav.navigate(V2Routes.STATS) }) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    Text("📊", fontSize = 24.sp)
+                    Text("  הסטטיסטיקות המלאות", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text("←", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
         item(key = "weekly") { WeeklyCard(p.weekly) }
         item(key = "badges_title") { SectionTitle("הישגים · ${p.badges.count { it.earned }} מתוך ${p.badges.size}") }
         p.badges.chunked(2).forEachIndexed { i, row ->

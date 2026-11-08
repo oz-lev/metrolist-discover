@@ -143,6 +143,7 @@ fun V21HomeExtras(run: (String, suspend () -> BuiltMix) -> Unit) {
             Tool("🔀", "ערבוב חכם", 0xFF8B5CF6, 0xFFEC4899) { scope.launch { if (!smartShuffle(ctx, db, pc)) toast(ctx, "התור ריק, תתחיל משהו קודם") } },
             Tool("📻", "חוגת עשורים", 0xFFF59E0B, 0xFF92400E) { decadeIndex = (decadeIndex + 1) % DECADES.size; val d = DECADES[decadeIndex]; run("📻 שנות ה-$d…") { V2Engine.decade(ctx, db, d) } },
             Tool("🔁", "Replay", 0xFFEA580C, 0xFF7C2D12) { nav.navigate(V2Routes.REPLAY) },
+            Tool("📊", "סטטיסטיקות", 0xFF0EA5E9, 0xFF6366F1) { nav.navigate(V2Routes.STATS) },
             Tool("🗂️", "התורים שלי", 0xFF6366F1, 0xFF312E81) { nav.navigate(V2Routes.QUEUES) },
             Tool("🎨", "עיצוב", 0xFFEC4899, 0xFF22D3EE) { nav.navigate(V2Routes.THEME) },
             Tool("👥", "פרופילים", 0xFF94A3B8, 0xFF334155) { nav.navigate(V2Routes.PROFILES) },

@@ -44,6 +44,7 @@ import com.metrolist.music.discover.v2.V2Engine
 import com.metrolist.music.discover.v2.ui.Pill
 import com.metrolist.music.discover.v2.ui.SectionTitle
 import com.metrolist.music.discover.v2.ui.TrackRow
+import com.metrolist.music.discover.v2.ui.V2Card
 import com.metrolist.music.discover.v2.ui.V2Page
 import com.metrolist.music.discover.v2.ui.playTracks
 import java.time.LocalDate
@@ -70,6 +71,16 @@ fun ReplayScreen(onBack: () -> Unit) {
         item(key = "periods") {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                 items(periods.size) { i -> Pill(periods[i], selected = i == period) { period = i } }
+            }
+        }
+        item(key = "full_stats") {
+            val nav = com.metrolist.music.LocalNavController.current
+            V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), onClick = { nav.navigate(com.metrolist.music.discover.v2.ui.V2Routes.STATS) }) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    Text("📊", fontSize = 24.sp)
+                    Text("  כל הסטטיסטיקות: דקות, אמנים, שירים, מגמות וייצוא", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text("←", fontWeight = FontWeight.Bold)
+                }
             }
         }
         if (hist == null) { item(key = "loading") { Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }; return@V2Page }
