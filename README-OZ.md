@@ -82,7 +82,7 @@ tools/backup_to_tsv.py               Metrolist backup/song.db -> TSV for the CLI
 .github/actions/{build-apk,engine-check}, .github/workflows/{build.yml,sync.yml}
 ```
 
-## Hook points (the entire upstream footprint: 9 anchor-based hooks in 8 upstream files, 0 Gradle file changes)
+## Hook points (the entire upstream footprint: 12 anchor-based hooks in 10 upstream files, 0 Gradle file changes)
 1. `app/src/main/kotlin/com/metrolist/music/playback/MusicService.kt`, in `onPlaybackStatsReady(...)`, right after `val mediaItem = ...`:
    `runCatching { com.metrolist.music.discover.DiscoverHooks.onPlaybackStats(this, database, mediaItem, playbackStats.totalPlayTimeMs, dataStore.get(PauseListenHistoryKey, false)) }`
    (respects "pause listen history"; Metrolist itself only stores sessions >= 30 s, the hook also records the short ones = skips).
@@ -122,6 +122,13 @@ home off). All hook lines carry the marker `[metrolist-discover hook] <name>` (s
 `overlay/app/src/release/AndroidManifest.xml` is a new file (manifest merge), not an edit; `apply-overlay.sh` fails if upstream ever ships it. App id / name use upstream's own env overrides
 (`METROLIST_APPLICATION_ID=com.metrolist.music.oz`, `METROLIST_APP_NAME="Metrolist Discover"`), versionName gets `+<commit>`
 via upstream's `METROLIST_BUILD_COMMIT`. Flavor: **foss** (upstream's own updater, re-pointed; no Cast). No permission is added.
+
+## 13.7.0.12 profiles = separate app instances (storage spaces)
+- Hooks 10-12 (`space-app`, `space-activity`, `space-service`): `attachBaseContext` of App, MainActivity and MusicService returns `ProfileSpace.wrap(base)` (App: `attachApp`, which also sets the WebView data-dir suffix). For "me" the base context is returned untouched: the main profile runs on its original files.
+- Any other profile: `SpaceContext` re-roots filesDir (`spaces/<id>/files`), cacheDir (`cache/spaces/<id>`), databases (`spaces/<id>/databases`), SharedPreferences (`sp_<id>__<name>`), WebView (`app_webview_space_<id>`). Room song.db, media3 exoplayer_internal.db (download index), DataStore settings (YouTube cookie / visitorData / account), player cache, downloads, persistent queue, Coil cache, every prefs file follow automatically. Pure path rules + tests: `engine/SpacePaths.kt`.
+- Device-wide on purpose: `discover_space` prefs (registry), `metrolist_discover.db` (rows carry profileId since 13.7.0.10; profile list, auto rules, Yomi toggle are g.* keys), WorkManager db/prefs, noBackupFilesDir, device-protected storage (upstream alarms), external files (playlist exports).
+- Switch: `ProfileSpace.switchAndRestart` writes the registry (commit) and starts `SpaceSwitchActivity` (process `:space`, release manifest): splash, kill the main pid, relaunch the launcher intent, exit. Discover bookkeeping on the next start: `DiscoverStore.reconcileSpace` (g.activeProfile, timeline mark, preset defaults, epoch `g.space1312`).
+- `SpaceOwnership`: in a non-main space every Metrolist row is the space's and only its own Discover log is visible; "me" keeps the old timeline for pre-epoch rows. `DiscoverRepository.ensureSpaceSeed`: once per older profile, copies the catalogue rows (song/artist/album/maps, library fields cleared) of its own Discover plays from "me"'s song.db.
 
 ## Versioning / in-app updates
 `ci/discover.init.gradle` (passed with `-I`, no upstream file touched) sets versionCode = upstream versionCode × 10000 + bot build number

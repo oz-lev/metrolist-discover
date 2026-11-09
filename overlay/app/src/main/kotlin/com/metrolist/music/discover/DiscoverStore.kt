@@ -133,12 +133,9 @@ class DiscoverStore private constructor(context: Context) :
         fun get(context: Context): DiscoverStore = instance ?: synchronized(this) {
             instance ?: DiscoverStore(context).also {
                 instance = it
-                // v2.1: restore the active profile before anything reads a setting
-                runCatching {
-                    val id = it.rawGet("g.activeProfile")
-                    val list = com.metrolist.music.discover.engine.Profiles.decode(it.rawGet("g.profiles"))
-                    list.firstOrNull { p -> p.id == id }?.let { p -> ProfileScope.active = p.id; ProfileScope.guest = p.guest }
-                }
+                // 13.7.0.12: the active profile is the storage space this process was started in (ProfileSpace, read before
+                // Hilt/Room). Discover's own bookkeeping (g.activeProfile, the timeline, preset defaults) follows it here.
+                runCatching { it.reconcileSpace(context) }
                 runCatching { it.migrateIsolation() }
             }
         }
@@ -155,6 +152,7 @@ class DiscoverStore private constructor(context: Context) :
         const val K_LIKE_AWARDED = "tuner.likeAwarded"
         const val K_TIMELINE = "g.timeline"
         const val K_ISO = "g.iso1310"
+        const val K_SPACE_EPOCH = "g.space1312"
     }
 
     /**
@@ -173,5 +171,29 @@ class DiscoverStore private constructor(context: Context) :
             if (rawGet(pk) == null) rawPut(pk, v)
         }
         rawPut(K_ISO, now.toString())
+    }
+
+    /** 13.7.0.12: the first start of the separate-storage version (Metrolist rows from then on belong to their database's owner). */
+    fun spaceEpoch(): Long? = rawGet(K_SPACE_EPOCH)?.toLongOrNull()
+
+    private fun reconcileSpace(context: Context) {
+        val space = com.metrolist.music.discover.space.ProfileSpace.resolve(com.metrolist.music.discover.space.ProfileSpace.unwrap(context))
+        val list = com.metrolist.music.discover.engine.Profiles.decode(rawGet("g.profiles"))
+        val p = list.firstOrNull { it.id == space } ?: com.metrolist.music.discover.engine.Profiles.PRESETS.firstOrNull { it.id == space }
+        ProfileScope.borrowMain = false
+        ProfileScope.active = p?.id ?: ProfileScope.DEFAULT
+        ProfileScope.guest = p?.guest ?: false
+        val now = DiscoverHooks.nowTs()
+        if (rawGet(K_SPACE_EPOCH) == null) rawPut(K_SPACE_EPOCH, now.toString())
+        val id = ProfileScope.active
+        if (rawGet("g.init.$id") == null) {
+            com.metrolist.music.discover.engine.Profiles.presetDefaults(id).forEach { (k, v) -> if (rawGet(ProfileScope.key(k, id)) == null) rawPut(ProfileScope.key(k, id), v) }
+            rawPut("g.init.$id", "1")
+        }
+        if (rawGet("g.activeProfile") != id) {
+            rawPut("g.activeProfile", id)
+            markSwitch(now, id)
+        }
+        com.metrolist.music.discover.v21.V21Profiles.onSpaceStart(context.applicationContext)
     }
 }

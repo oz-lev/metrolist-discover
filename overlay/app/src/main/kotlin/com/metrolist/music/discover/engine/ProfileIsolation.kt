@@ -61,7 +61,8 @@ object ProfileIsolation {
      * history it always did. New is the owner: a Discover row carries its own; an event row takes the owner of the
      * nearest Discover row of the same song within [matchMs], else the timeline's.
      */
-    fun mergePlays(events: List<PlayEvent>, own: List<OwnedPlay>, marks: List<SwitchMark>, matchMs: Long = 15 * 60_000L): List<OwnedPlay> {
+    fun mergePlays(events: List<PlayEvent>, own: List<OwnedPlay>, marks: List<SwitchMark>, matchMs: Long = 15 * 60_000L,
+                   default: String = ProfileScope.DEFAULT): List<OwnedPlay> {
         val byId = HashMap<String, MutableList<OwnedPlay>>()
         for (p in own) byId.getOrPut(p.play.trackId) { ArrayList() } += p
         val eventKeys = HashSet<String>()
@@ -73,7 +74,7 @@ object ProfileIsolation {
                 val d = kotlin.math.abs(o.play.timestampMs - e.timestampMs)
                 if (d <= matchMs && d < bestD) { owner = o.owner; bestD = d }
             }
-            out += OwnedPlay(e, owner ?: ProfileTimeline.owner(marks, e.timestampMs))
+            out += OwnedPlay(e, owner ?: ProfileTimeline.owner(marks, e.timestampMs, default))
         }
         for (p in own) {
             val k = p.play.timestampMs / 900_000L
@@ -84,8 +85,8 @@ object ProfileIsolation {
         return out
     }
 
-    fun ownSignals(signals: List<ExplicitSignal>, marks: List<SwitchMark>): List<OwnedSignal> =
-        signals.map { OwnedSignal(it, ProfileTimeline.owner(marks, it.timestampMs)) }
+    fun ownSignals(signals: List<ExplicitSignal>, marks: List<SwitchMark>, default: String = ProfileScope.DEFAULT): List<OwnedSignal> =
+        signals.map { OwnedSignal(it, ProfileTimeline.owner(marks, it.timestampMs, default)) }
 
     /**
      * The History [profile] is allowed to see. [strictArtists]: an artist heard only in other profiles is hidden too

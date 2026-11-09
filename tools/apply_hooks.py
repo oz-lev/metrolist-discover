@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inserts the Metrolist-Discover hooks (9 of them, see README-OZ.md) into an upstream Metrolist checkout (GPL-3.0).
+"""Inserts the Metrolist-Discover hooks (12 of them, see README-OZ.md) into an upstream Metrolist checkout (GPL-3.0).
 
 Anchor based instead of line-number patches, so upstream edits around the hooks don't break it.
 Idempotent (a hook already present is left alone). Exits 3 with a clear message when an anchor
@@ -126,6 +126,27 @@ def miniplayer(src):
     if src.count(anchor) != 1: return None
     return src.replace(anchor, f".then(com.metrolist.music.discover.v21.theme.DiscoverChrome.miniBorder(outlineColor)) // {MARK} miniplayer", 1)
 
+# Hooks 10-12 (13.7.0.12) - every profile is its own app instance on disk. App extends SpaceApplication; attachBaseContext
+# of the main activity and the music service gets the profile's storage context (ProfileSpace.wrap: for "me" the original
+# context is returned untouched, so the main profile keeps its legacy files byte for byte).
+def _attach(cls_pattern, call, name):
+    def fn(src):
+        if "override fun attachBaseContext" in src: return None  # upstream started overriding it: a human must merge
+        m = re.compile(cls_pattern, re.S).search(src)
+        if not m: return None
+        line = (f"\n    override fun attachBaseContext(base: android.content.Context) {{ super.attachBaseContext({call}(base)) }} // {MARK} {name}\n")
+        return src[:m.end()] + line + src[m.end():]
+    return fn
+
+def space_app(src):
+    # the Application must keep the platform's base context (Android casts it to ContextImpl for broadcasts), so App gets
+    # SpaceApplication as its superclass instead (Hilt's Hilt_App then extends SpaceApplication)
+    pat = re.compile(r"(\nclass App\s*:\s*)Application\(\),")
+    if len(pat.findall(src)) != 1: return None
+    return pat.sub(lambda m: m.group(1) + f"com.metrolist.music.discover.space.SpaceApplication(), // {MARK} space-app", src, count=1)
+space_activity = _attach(r"\nclass MainActivity\s*:\s*FragmentActivity\(\)\s*\{[ \t]*\n", "com.metrolist.music.discover.space.ProfileSpace.wrap", "space-activity")
+space_service = _attach(r"\nclass MusicService\s*:\s*MediaLibraryService\(\)[^{]*\{[ \t]*\n", "com.metrolist.music.discover.space.ProfileSpace.wrap", "space-service")
+
 edit("app/src/main/kotlin/com/metrolist/music/playback/MusicService.kt", music_service, "stats")
 edit("app/src/main/kotlin/com/metrolist/music/ui/screens/HomeScreen.kt", home_screen, "home")
 edit("app/src/main/kotlin/com/metrolist/music/utils/Updater.kt", updater, "updater")
@@ -135,6 +156,9 @@ edit("app/src/main/kotlin/com/metrolist/music/playback/MusicService.kt", service
 edit("app/src/main/kotlin/com/metrolist/music/ui/theme/Theme.kt", theme, "theme")
 edit("app/src/main/kotlin/com/metrolist/music/ui/component/AppNavigation.kt", navbar, "navbar")
 edit("app/src/main/kotlin/com/metrolist/music/ui/player/MiniPlayer.kt", miniplayer, "miniplayer")
+edit("app/src/main/kotlin/com/metrolist/music/App.kt", space_app, "space-app")
+edit("app/src/main/kotlin/com/metrolist/music/MainActivity.kt", space_activity, "space-activity")
+edit("app/src/main/kotlin/com/metrolist/music/playback/MusicService.kt", space_service, "space-service")
 if errors:
     for e in errors: print("::error::" + e)
     sys.exit(3)

@@ -38,7 +38,8 @@ object ProfileScope {
     @Volatile var active: String = DEFAULT
     @Volatile var guest: Boolean = false
 
-    private val GLOBAL = setOf("v2.colors", "v2.offline.day", "v2.offline.ids")
+    /** 13.7.0.12: the overnight offline mix (v2.offline.*) is per profile too; only the art-colour cache stays global. */
+    private val GLOBAL = setOf("v2.colors")
     /** 13.7.0.10: Discover's caches, "not for me" lists and skip thresholds are per profile too (they leaked before). */
     private val SCOPED_EXTRA = setOf("tuner.state", "tuner.likeAwarded",
         "discover.cache", "discover.cacheTs", "mixes.cache", "mixes.cacheTs",
@@ -52,7 +53,13 @@ object ProfileScope {
     fun key(k: String, profile: String = active): String = if (profile == DEFAULT || !scoped(k)) k else "p.$profile.$k"
 
     /** 13.7.0.10: whose listening history the engine reads. The guest records nothing and borrows the main taste read-only. */
-    fun historyOwner(profile: String = active, isGuest: Boolean = guest): String = if (isGuest) DEFAULT else profile
+    fun historyOwner(profile: String = active, isGuest: Boolean = guest, borrow: Boolean = borrowMain): String = if (isGuest && borrow) DEFAULT else profile
+
+    /**
+     * 13.7.0.12: false in the app (every profile is its own app instance, so the guest starts empty and borrows nothing);
+     * true keeps the 13.7.0.10 behaviour (the guest reads the main taste) for code that never switched.
+     */
+    @Volatile var borrowMain: Boolean = true
 
     /** Whose a new play is (null = record nothing: the guest). */
     fun recordOwner(profile: String = active, isGuest: Boolean = guest): String? = if (isGuest) null else profile

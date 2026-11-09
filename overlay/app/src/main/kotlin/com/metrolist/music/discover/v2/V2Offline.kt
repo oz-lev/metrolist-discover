@@ -46,6 +46,8 @@ interface V2EntryPoint {
  * "Downloaded" library), and removes the previous night's auto-downloads that you never liked or kept.
  */
 class V2OfflineJob : JobService() {
+    // 13.7.0.12: the job works in the active profile's own storage, like the rest of the app
+    override fun attachBaseContext(base: android.content.Context) { super.attachBaseContext(com.metrolist.music.discover.space.ProfileSpace.wrap(base)) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
 

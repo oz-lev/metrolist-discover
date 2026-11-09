@@ -30,6 +30,7 @@ import com.metrolist.music.discover.engine.TrackMeta
 import com.metrolist.music.discover.engine.TunerState
 import com.metrolist.music.discover.engine.OwnedPlay
 import com.metrolist.music.discover.engine.ProfileIsolation
+import com.metrolist.music.discover.engine.SpaceOwnership
 import com.metrolist.music.discover.engine.ProfileScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -87,6 +88,7 @@ class DiscoverRepository(private val context: Context, private val database: Mus
     fun loadHistory(): History = loadIsolated().history
 
     fun loadIsolated(profile: String = ProfileScope.historyOwner()): Isolated {
+        runCatching { ensureSpaceSeed(ProfileScope.active) }
         val db = database.openHelper.readableDatabase
         val artists = HashMap<String, MutableList<Pair<String, String>>>()
         db.query("SELECT m.songId, m.artistId, a.name FROM song_artist_map m JOIN artist a ON a.id = m.artistId ORDER BY m.songId, m.position").use { c ->
@@ -106,9 +108,15 @@ class DiscoverRepository(private val context: Context, private val database: Mus
             while (c.moveToNext()) events += PlayEvent(c.getString(0), c.getLong(1), c.getLong(2))
         }
         // our own log adds what Metrolist does not keep (the short, skipped sessions) and says whose each listen was
-        val own = store.allPlays().map { p -> OwnedPlay(PlayEvent(p.songId, p.ts, p.playedMs, p.durationMs, p.fromDiscover), p.profileId) }
-        val marks = store.timeline()
-        val plays = ProfileIsolation.mergePlays(events, own, marks)
+        // 13.7.0.12: this database is the active profile's own (see SpaceOwnership): a non-main profile owns every row in it
+        // and knows nothing of the others' Discover log; "me" still tells its pre-13.7.0.12 shared rows apart by the timeline
+        val epoch = store.spaceEpoch()
+        val space = ProfileScope.active
+        val own = SpaceOwnership.visiblePlays(space,
+            store.allPlays().map { p -> OwnedPlay(PlayEvent(p.songId, p.ts, p.playedMs, p.durationMs, p.fromDiscover), p.profileId) }, epoch)
+        val attr = SpaceOwnership.attribution(space, store.timeline(), epoch)
+        val marks = attr.marks
+        val plays = ProfileIsolation.mergePlays(events, own, marks, default = attr.default)
         val signals = ArrayList<ExplicitSignal>()
         fun ts(c: android.database.Cursor, i: Int): Long? = if (c.isNull(i)) null else c.getLong(i)
         db.query("SELECT id, likedDate FROM song WHERE liked = 1").use { c -> while (c.moveToNext()) signals += ExplicitSignal(c.getString(0), SignalKind.LIKE, ts(c, 1)) }
@@ -119,8 +127,90 @@ class DiscoverRepository(private val context: Context, private val database: Mus
         db.query("SELECT songId, relatedSongId FROM related_song_map ORDER BY id").use { c ->
             while (c.moveToNext()) related.getOrPut(c.getString(0)) { ArrayList() } += c.getString(1)
         }
-        val owned = ProfileIsolation.ownSignals(signals, marks)
+        val owned = ProfileIsolation.ownSignals(signals, marks, attr.default)
         return Isolated(ProfileIsolation.isolate(tracks, plays, owned, related, profile), ProfileIsolation.foreignTracks(plays, owned, profile), profile)
+    }
+
+
+    /**
+     * 13.7.0.12, once per profile: a profile created before this version has its own Discover plays (discover.db) but a
+     * brand-new Metrolist database, so the songs behind those plays have no title/artist there. Their catalogue rows
+     * (song, artist, album and the maps) are copied from the main profile's file, with every library / like / download /
+     * play-time field cleared, so the profile keeps its own taste and stats and gets none of "me"'s library.
+     */
+    private fun ensureSpaceSeed(space: String) {
+        if (space == ProfileScope.DEFAULT || ProfileScope.guest) return
+        val flag = "g.seed.$space"
+        if (store.rawGet(flag) != null) return
+        store.rawPut(flag, "started") // never retried in a loop if it fails
+        val ids = store.plays(0L, space).map { it.songId }.filter { it.isNotBlank() }.distinct()
+        val legacyFile = com.metrolist.music.discover.space.ProfileSpace.legacyDatabase(context, "song.db")
+        if (ids.isEmpty() || !legacyFile.exists()) { store.rawPut(flag, "0"); return }
+        // the main profile's file is only SELECTed from (a separate connection: ATTACH would switch Room's file out of WAL)
+        val legacy = android.database.sqlite.SQLiteDatabase.openDatabase(legacyFile.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE)
+        try {
+            val db = database.openHelper.writableDatabase
+            fun cols(t: String): Set<String> = db.query("PRAGMA table_info($t)").use { c ->
+                val out = HashSet<String>(); while (c.moveToNext()) out += c.getString(1); out
+            }
+            fun inList(n: Int) = (1..n).joinToString(",") { "?" }
+            /** rows of legacy [t] where [key] is one of [keys], copied column by column (only columns both files have) */
+            fun copy(t: String, key: String, keys: Collection<String>): Set<String> {
+                val mine = cols(t); val seen = HashSet<String>()
+                for (ch in keys.chunked(300)) {
+                    legacy.rawQuery("SELECT * FROM $t WHERE $key IN (${inList(ch.size)})", ch.toTypedArray()).use { c ->
+                        while (c.moveToNext()) {
+                            val v = android.content.ContentValues()
+                            for (i in 0 until c.columnCount) {
+                                val n = c.getColumnName(i); if (n !in mine) continue
+                                when (c.getType(i)) {
+                                    android.database.Cursor.FIELD_TYPE_NULL -> v.putNull(n)
+                                    android.database.Cursor.FIELD_TYPE_INTEGER -> v.put(n, c.getLong(i))
+                                    android.database.Cursor.FIELD_TYPE_FLOAT -> v.put(n, c.getDouble(i))
+                                    android.database.Cursor.FIELD_TYPE_BLOB -> v.put(n, c.getBlob(i))
+                                    else -> v.put(n, c.getString(i))
+                                }
+                            }
+                            if (v.size() > 0 && runCatching { db.insert(t, android.database.sqlite.SQLiteDatabase.CONFLICT_IGNORE, v) }.getOrDefault(-1L) != -1L) {
+                                v.getAsString("id")?.let { seen += it }
+                            }
+                        }
+                    }
+                }
+                return seen
+            }
+            fun legacyColumn(sql: String, keys: List<String>): Set<String> {
+                val out = HashSet<String>()
+                for (ch in keys.chunked(300)) legacy.rawQuery(sql.replace("#", inList(ch.size)), ch.toTypedArray()).use { c ->
+                    while (c.moveToNext()) if (!c.isNull(0)) out += c.getString(0)
+                }
+                return out
+            }
+            fun clear(t: String, newIds: Collection<String>, values: Map<String, String>) {
+                val have = cols(t)
+                val set = values.filterKeys { it in have }.entries.joinToString(",") { "\"${it.key}\" = ${it.value}" }
+                if (set.isEmpty()) return
+                for (ch in newIds.chunked(300)) db.execSQL("UPDATE $t SET $set WHERE id IN (${inList(ch.size)})", ch.map { it as Any }.toTypedArray())
+            }
+            val artistIds = legacyColumn("SELECT DISTINCT artistId FROM song_artist_map WHERE songId IN (#)", ids)
+            val albumIds = legacyColumn("SELECT DISTINCT albumId FROM song WHERE id IN (#)", ids) + legacyColumn("SELECT DISTINCT albumId FROM song_album_map WHERE songId IN (#)", ids)
+            db.beginTransaction()
+            try {
+                val newArtists = copy("artist", "id", artistIds)
+                val newAlbums = copy("album", "id", albumIds)
+                val newSongs = copy("song", "id", ids)
+                copy("song_artist_map", "songId", ids)
+                copy("song_album_map", "songId", ids)
+                // none of "me"'s library comes along: only what a song / artist / album IS, never what "me" did with it
+                clear("song", newSongs, mapOf("liked" to "0", "likedDate" to "NULL", "inLibrary" to "NULL", "dateDownload" to "NULL",
+                    "totalPlayTime" to "0", "libraryAddToken" to "NULL", "libraryRemoveToken" to "NULL", "isDownloaded" to "0",
+                    "isCached" to "0", "playbackPosition" to "NULL", "isUploaded" to "0", "uploadEntityId" to "NULL"))
+                clear("artist", newArtists, mapOf("bookmarkedAt" to "NULL"))
+                clear("album", newAlbums, mapOf("bookmarkedAt" to "NULL", "likedDate" to "NULL", "inLibrary" to "NULL", "isUploaded" to "0"))
+                db.setTransactionSuccessful()
+                store.rawPut(flag, newSongs.size.toString())
+            } finally { db.endTransaction() }
+        } finally { runCatching { legacy.close() } }
     }
 
     // ---------------------------------------------------------------- recommendations

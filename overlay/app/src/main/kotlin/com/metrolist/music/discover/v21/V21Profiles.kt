@@ -13,6 +13,7 @@ import com.metrolist.music.discover.engine.ProfileScope
 import com.metrolist.music.discover.engine.Profiles
 import com.metrolist.music.discover.v2.V2Engine
 import com.metrolist.music.discover.v2.V2Settings
+import com.metrolist.music.discover.space.ProfileSpace
 import com.metrolist.music.utils.dataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,56 +26,52 @@ import androidx.datastore.preferences.core.edit
  * Switchable profiles (פרופילים). Each profile has its own copy of every v2/v2.1 setting (theme included) and its own
  * learning state (self-tuner + vibe corrections) - see ProfileScope for the key mapping. 13.7.0.10: and its own history,
  * taste, Discover list, mixes and caches (ProfileIsolation): a song heard in one profile never reaches another. Everything lives in Discover's own
- * kv table; Metrolist's schema is untouched. The guest profile never records: while it is active Metrolist's own
+ * kv table; Metrolist's schema is untouched. 13.7.0.12: and each profile is its own app instance on disk (ProfileSpace). The guest profile never records: while it is active Metrolist's own
  * "pause listen history" is switched on (and restored afterwards) and Discover's own play log is skipped.
  */
 object V21Profiles {
     private val io = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val DUP_SKIP = setOf("discover.cache", "discover.cacheTs", "mixes.cache", "mixes.cacheTs", "v21.qhist", "v21.opens", "v21.bubbleDay")
+    private val DUP_SKIP = setOf("discover.cache", "discover.cacheTs", "mixes.cache", "mixes.cacheTs", "v21.qhist", "v21.opens", "v21.bubbleDay", "v2.offline.day", "v2.offline.ids")
 
     fun list(ctx: Context): List<DProfile> = Profiles.decode(DiscoverStore.get(ctx).rawGet("g.profiles"))
     fun active(ctx: Context): DProfile { DiscoverStore.get(ctx); return list(ctx).firstOrNull { it.id == ProfileScope.active } ?: Profiles.PRESETS[0] }
 
     private fun saveList(ctx: Context, l: List<DProfile>) { DiscoverStore.get(ctx).rawPut("g.profiles", Profiles.encode(l)); V2Settings.get(ctx).bump() }
 
-    /** Switch now. Preset profiles get their starting settings the first time they are used. */
+    /**
+     * 13.7.0.12: switching = a separate app instance. The registry is written and the app restarts into the new profile's
+     * own storage (a short "עובר לפרופיל…" splash). Discover's bookkeeping (timeline mark, preset defaults, active id)
+     * happens when the new process opens Discover's store (DiscoverStore.reconcileSpace). [ctx] should be an Activity.
+     */
     fun switchTo(ctx: Context, id: String) {
-        val app = ctx.applicationContext
-        val store = DiscoverStore.get(app)
-        val l = list(app)
-        val p = l.firstOrNull { it.id == id } ?: return
+        val p = list(ctx.applicationContext).firstOrNull { it.id == id } ?: return
         if (p.id == ProfileScope.active) return
-        val wasGuest = ProfileScope.guest
-        if (store.rawGet("g.init.${p.id}") == null) {
-            Profiles.presetDefaults(p.id).forEach { (k, v) -> if (store.rawGet(ProfileScope.key(k, p.id)) == null) store.rawPut(ProfileScope.key(k, p.id), v) }
-            store.rawPut("g.init.${p.id}", "1")
-        }
-        ProfileScope.active = p.id
-        ProfileScope.guest = p.guest
-        store.rawPut("g.activeProfile", p.id)
-        // 13.7.0.10: from this moment Metrolist's own rows (plays, likes, downloads) belong to this profile
-        store.markSwitch(V2Engine.now(), p.id)
-        if (p.guest != wasGuest) guestHistory(app, entering = p.guest)
-        V2Engine.resetLearning(app)
-        V2Settings.get(app).bump()
+        ProfileSpace.switchAndRestart(ctx, p.id, p.name, p.emoji)
     }
 
-    /** Guest: Metrolist's own listen history is paused while the guest is active, then restored to what it was. */
-    private fun guestHistory(ctx: Context, entering: Boolean) {
+    /**
+     * Runs once per process start, in the profile's own space: the guest keeps Metrolist's own history paused (in its own
+     * settings file now). The main profile gets back the pause setting that the 13.7.0.10/11 guest switch may have left
+     * on in what was then the one shared settings file.
+     */
+    fun onSpaceStart(ctx: Context) {
         io.launch {
             runCatching {
                 val store = DiscoverStore.get(ctx)
-                if (entering) {
-                    val was = ctx.dataStore.data.first()[PauseListenHistoryKey] ?: false
-                    store.rawPut("g.guestPrevPause", was.toString())
+                if (ProfileScope.guest) {
                     ctx.dataStore.edit { it[PauseListenHistoryKey] = true }
-                } else {
-                    val was = store.rawGet("g.guestPrevPause")?.toBooleanStrictOrNull() ?: false
-                    ctx.dataStore.edit { it[PauseListenHistoryKey] = was }
+                } else if (ProfileScope.active == ProfileScope.DEFAULT) {
+                    val prev = store.rawGet("g.guestPrevPause")
+                    if (prev != null) {
+                        ctx.dataStore.edit { it[PauseListenHistoryKey] = prev.toBooleanStrictOrNull() ?: false }
+                        store.rawPut("g.guestPrevPause", null)
+                    }
                 }
             }
         }
     }
+
+    private fun secretKey() = if (ProfileScope.active == ProfileScope.DEFAULT) "g.secretPrevPause" else "g.secretPrevPause.${ProfileScope.active}"
 
     /** Secret mode uses the same switch (Metrolist's pause-history), so nothing is written anywhere while it is on. */
     fun applySecret(ctx: Context, on: Boolean) {
@@ -83,11 +80,11 @@ object V21Profiles {
                 val store = DiscoverStore.get(ctx)
                 if (on) {
                     val was = ctx.dataStore.data.first()[PauseListenHistoryKey] ?: false
-                    if (store.rawGet("g.secretPrevPause") == null) store.rawPut("g.secretPrevPause", was.toString())
+                    if (store.rawGet(secretKey()) == null) store.rawPut(secretKey(), was.toString())
                     ctx.dataStore.edit { it[PauseListenHistoryKey] = true }
                 } else {
-                    val was = store.rawGet("g.secretPrevPause")?.toBooleanStrictOrNull() ?: false
-                    store.rawPut("g.secretPrevPause", null)
+                    val was = store.rawGet(secretKey())?.toBooleanStrictOrNull() ?: false
+                    store.rawPut(secretKey(), null)
                     if (!ProfileScope.guest) ctx.dataStore.edit { it[PauseListenHistoryKey] = was }
                 }
             }
@@ -119,20 +116,30 @@ object V21Profiles {
 
     fun rename(ctx: Context, id: String, name: String, emoji: String?, color: Long?) = saveList(ctx, Profiles.rename(list(ctx), id, name, emoji, color))
 
-    fun delete(ctx: Context, id: String) {
-        if (!Profiles.canDelete(id)) return
-        if (ProfileScope.active == id) switchTo(ctx, ProfileScope.DEFAULT)
+    /**
+     * 13.7.0.12: deleting a profile deletes its whole app instance: its own Metrolist database (history, library, likes,
+     * playlists, downloads index), settings and YouTube login, caches, downloads, WebView data, plus its Discover rows.
+     * The active profile cannot be deleted (switch away first); the main profile never.
+     */
+    fun delete(ctx: Context, id: String): Boolean {
+        if (!Profiles.canDelete(id) || ProfileScope.active == id) return false
         saveList(ctx, Profiles.delete(list(ctx), id))
         val store = DiscoverStore.get(ctx)
         store.rawDeletePrefix("p.$id.")
         store.rawPut("g.init.$id", null)
-        // 13.7.0.10: its listens go with it. Its stretches of the timeline become a tombstone no profile reads, so they do
-        // not fall into the main profile either. Metrolist's own history is untouched.
+        store.rawPut("g.seed.$id", null)
+        store.rawPut("g.secretPrevPause.$id", null)
+        // its Discover listens go with it; its stretches of the old shared timeline become a tombstone no profile reads
         runCatching { store.deletePlaysOf(id); store.reassignTimeline(id, "x.$id") }
         V2Engine.forget(id)
+        if (ProfileSpace.pending(ctx) == id) ProfileSpace.setPending(ctx, null)
+        return ProfileSpace.deleteFiles(ctx, id)
     }
 
-    /** Called every 30 s by the service: applies the auto-switch schedule (edge triggered). */
+    /**
+     * Called every 30 s by the service: the auto-switch schedule (edge triggered). 13.7.0.12: a switch restarts the app,
+     * so a scheduled one never kills a running app; it is queued and happens at the next cold start.
+     */
     fun autoTick(ctx: Context) {
         val s = V2Settings.get(ctx)
         if (!s.autoSwitch) return
@@ -142,6 +149,6 @@ object V21Profiles {
         val last = store.rawGet("g.autoLast")?.ifBlank { null }
         val target = AutoSwitch.decide(last, pick, ProfileScope.active)
         if (pick != last) store.rawPut("g.autoLast", pick ?: "")
-        if (target != null) switchTo(ctx, target)
+        if (target != null) ProfileSpace.setPending(ctx, target)
     }
 }

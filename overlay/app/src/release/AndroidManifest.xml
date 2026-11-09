@@ -39,5 +39,15 @@
             android:authorities="${applicationId}.daily"
             android:exported="true"
             android:grantUriPermissions="false" />
+        <!-- 13.7.0.12: profile switch splash. Its own small process (":space") ends the main process and relaunches the
+             app in the new profile (ProcessPhoenix pattern). An activity is not a permission. -->
+        <activity
+            android:name="com.metrolist.music.discover.space.SpaceSwitchActivity"
+            android:process=":space"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity="com.metrolist.music.oz.space"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
     </application>
 </manifest>

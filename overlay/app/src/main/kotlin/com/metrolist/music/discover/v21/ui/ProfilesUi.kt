@@ -78,7 +78,7 @@ fun ProfileSwitcherRow(modifier: Modifier = Modifier, onManage: (() -> Unit)? = 
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.clip(RoundedCornerShape(50))
                     .background(if (on) Brush.linearGradient(listOf(Color(p.color), Color(p.color).copy(alpha = 0.6f))) else Brush.linearGradient(listOf(MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.colorScheme.surfaceContainerHighest)))
-                    .clickable { if (!on) { V21Profiles.switchTo(ctx, p.id); toast(ctx, "${p.emoji} עברת לפרופיל ${p.name}" + if (p.guest) " (לא נרשם כלום)" else "") } }
+                    .clickable { if (!on) V21Profiles.switchTo(ctx, p.id) }
                     .padding(horizontal = 12.dp, vertical = 7.dp),
             ) {
                 Text(p.emoji, fontSize = 16.sp)
@@ -147,7 +147,7 @@ fun ProfileQuickSheet(onDismiss: () -> Unit, onManage: () -> Unit) {
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp, vertical = 3.dp).clip(RoundedCornerShape(18.dp))
                             .background(if (on) Color(p.color).copy(alpha = 0.9f) else Color(p.color).copy(alpha = 0.18f))
                             .clickable {
-                                if (!on) { V21Profiles.switchTo(ctx, p.id); toast(ctx, "${p.emoji} ${p.name}" + if (p.guest) " (לא נרשם כלום)" else "") }
+                                if (!on) V21Profiles.switchTo(ctx, p.id)
                                 onDismiss()
                             }
                             .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -190,7 +190,7 @@ fun ProfilesScreen(onBack: () -> Unit) {
     var addRule by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf<DProfile?>(null) }
 
-    V2Page(title = "פרופילים 👥", subtitle = "לכל פרופיל היסטוריה, טעם, מיקסים והגדרות משלו", onBack = onBack) {
+    V2Page(title = "פרופילים 👥", subtitle = "כל פרופיל הוא אפליקציה נפרדת: היסטוריה, ספרייה, הגדרות וחשבון משלו", onBack = onBack) {
         list.forEach { p ->
             item(key = "p_${p.id}") {
                 val on = p.id == ProfileScope.active
@@ -205,12 +205,12 @@ fun ProfilesScreen(onBack: () -> Unit) {
                             Text(when {
                                 p.guest -> "אורח: ההשמעות לא נרשמות ולא משנות את הלמידה שלך"
                                 p.id == ProfileScope.DEFAULT -> "הפרופיל הראשי (כל ההיסטוריה הקודמת שלך)"
-                                else -> "היסטוריה, טעם ומיקסים נפרדים"
+                                else -> "אפליקציה נפרדת: היסטוריה, ספרייה, הגדרות וחשבון משלו"
                             }, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
                         }
                         Text("✏️", fontSize = 20.sp, modifier = Modifier.clip(CircleShape).clickable { edit = p }.padding(8.dp))
                         Text("⧉", fontSize = 20.sp, color = Color.White, modifier = Modifier.clip(CircleShape).clickable { V21Profiles.duplicate(ctx, p.id)?.let { toast(ctx, "שוכפל: ${it.name}") } }.padding(8.dp))
-                        if (Profiles.canDelete(p.id)) Text("🗑️", fontSize = 20.sp, modifier = Modifier.clip(CircleShape).clickable { confirmDelete = p }.padding(8.dp))
+                        if (Profiles.canDelete(p.id) && !on) Text("🗑️", fontSize = 20.sp, modifier = Modifier.clip(CircleShape).clickable { confirmDelete = p }.padding(8.dp))
                     }
                 }
             }
@@ -222,7 +222,7 @@ fun ProfilesScreen(onBack: () -> Unit) {
         item(key = "auto") {
             Box(Modifier.padding(horizontal = 16.dp)) {
                 Group("⏰", "לפי יום ושעה", Brush.linearGradient(listOf(Color(0xFF1E1B4B), Color(0xFF4338CA)))) {
-                    Toggle("מעבר אוטומטי", "בתחילת חלון זמן עוברים לפרופיל, בסופו חוזרים ל\"אני\". החלפה ידנית מכובדת עד החלון הבא.", s.autoSwitch) { s.autoSwitch = it }
+                    Toggle("מעבר אוטומטי", "בתחילת חלון זמן עוברים לפרופיל, בסופו חוזרים ל\"אני\". כי מעבר מפעיל מחדש את האפליקציה, הוא קורה בפתיחה הבאה שלה ולא באמצע השמעה.", s.autoSwitch) { s.autoSwitch = it }
                     val rules = s.autoRules
                     rules.forEachIndexed { i, r ->
                         val p = list.firstOrNull { it.id == r.profileId }
@@ -240,7 +240,7 @@ fun ProfilesScreen(onBack: () -> Unit) {
                 }
             }
         }
-        item(key = "hint") { Hint("כל השמעה, לייק והורדה נרשמים לפרופיל שהיה פעיל באותו רגע. ההמלצות, המיקסים והטעם של כל פרופיל נבנים רק מההיסטוריה שלו. ההיסטוריה שלפני העדכון שייכת ל\"אני\". אורח לא נרשם בכלל.", Modifier.padding(vertical = 10.dp)) }
+        item(key = "hint") { Hint("כל פרופיל הוא עותק נפרד של האפליקציה: היסטוריה, Quick picks, ספרייה, לייקים, פלייליסטים, הורדות, חיפושים, הגדרות, חשבון YouTube, סטטיסטיקות, Replay ו-Discover משלו. מעבר פרופיל מפעיל את האפליקציה מחדש לכמה שניות. כל מה שהיה לך לפני העדכון נשאר ב\"אני\". פרופיל חדש מתחיל נקי. את הפרופיל הפעיל אי אפשר למחוק: עוברים קודם לאחר. אורח לא נרשם בכלל.", Modifier.padding(vertical = 10.dp)) }
     }
 
     if (creating || edit != null) ProfileDialog(edit, onDismiss = { creating = false; edit = null }) { name, emoji, color ->
@@ -253,8 +253,8 @@ fun ProfilesScreen(onBack: () -> Unit) {
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
             title = { Text("למחוק את ${p.name}?") },
-            text = { Text("ההשמעות, הטעם, ההגדרות והמיקסים של הפרופיל הזה יימחקו. שאר הפרופילים לא נפגעים.") },
-            confirmButton = { TextButton(onClick = { V21Profiles.delete(ctx, p.id); confirmDelete = null }) { Text("מחק") } },
+            text = { Text("כל מה שיש בפרופיל הזה יימחק לתמיד: היסטוריה, ספרייה, לייקים, פלייליסטים, הורדות, הגדרות, חשבון YouTube, הטעם והמיקסים. שאר הפרופילים לא נפגעים.") },
+            confirmButton = { TextButton(onClick = { V21Profiles.delete(ctx, p.id); confirmDelete = null; toast(ctx, "${p.emoji} ${p.name} נמחק") }) { Text("מחק") } },
             dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("ביטול") } },
         )
     }
