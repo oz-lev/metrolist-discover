@@ -218,6 +218,9 @@ fun V2HomeSection() {
                 }
             }
 
+            // 13.7.0.13: "💔 אהובים שנשכחו" (5+ plays, silent 60+ days), one tap plays a shuffled mix of them
+            com.metrolist.music.discover.v21.ui.ForgottenHomeCard(profileId)
+
             // the auto mixes from v1 (daily, forgotten favourites, time of day, "in the style of")
             if (state.mixes.isNotEmpty()) {
                 Text("המיקסים שלך", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 6.dp))

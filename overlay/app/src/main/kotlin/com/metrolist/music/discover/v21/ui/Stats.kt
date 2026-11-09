@@ -1,5 +1,5 @@
 /**
- * Metrolist Discover 13.7.0.11 (fork addition) - GPL-3.0
+ * Metrolist Discover 13.7.0.11 (fork addition; extended in 13.7.0.13) - GPL-3.0
  * "📊 סטטיסטיקות": the full listening statistics of the active profile (engine/FullStats.kt does the counting).
  */
 package com.metrolist.music.discover.v21.ui
@@ -89,6 +89,18 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.time.LocalDate
 import java.time.YearMonth
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
+import com.metrolist.music.discover.engine.ComparePreset
+import com.metrolist.music.discover.engine.Comparison
+import com.metrolist.music.discover.engine.CompletionReport
+import com.metrolist.music.discover.engine.ForgottenSong
+import com.metrolist.music.discover.engine.GenreReport
+import com.metrolist.music.discover.engine.GoalStats
+import com.metrolist.music.discover.engine.Loyalty
+import com.metrolist.music.discover.engine.Milestone
+import com.metrolist.music.discover.engine.Recap
+import com.metrolist.music.discover.engine.StatsPlus
 
 /**
  * The prepared statistics of one profile, computed off the main thread and kept per profile + history snapshot
@@ -130,7 +142,11 @@ object StatsCache {
     }
 }
 
-private enum class Sec(val title: String) { OVERVIEW("סקירה"), ARTISTS("אמנים"), SONGS("שירים"), ALBUMS("אלבומים"), TRENDS("מגמות"), HABITS("הרגלים"), DISCOVERY("גילוי") }
+// 13.7.0.13: RECAP, GENRES, COMPLETION, COMPARE, MILESTONES, FORGOTTEN (StatsPlusUi.kt). independent = not tied to the period picker.
+private enum class Sec(val title: String, val independent: Boolean = false) {
+    OVERVIEW("סקירה"), RECAP("🎁 סיכום"), ARTISTS("אמנים"), SONGS("שירים"), ALBUMS("אלבומים"), GENRES("ז'אנרים"), TRENDS("מגמות"),
+    HABITS("הרגלים"), COMPLETION("סיום שירים"), COMPARE("⚖️ השוואה", true), DISCOVERY("גילוי"), MILESTONES("🏅 אבני דרך", true), FORGOTTEN("💔 נשכחו", true),
+}
 
 private data class Detail(val artist: Boolean, val id: String)
 
@@ -167,6 +183,23 @@ fun StatsScreen(onBack: () -> Unit) {
     var artistDetail by remember { mutableStateOf<ArtistDetail?>(null) }
     var songDetail by remember { mutableStateOf<SongDetail?>(null) }
     val period = StatsPeriod(unit, offset)
+    // 13.7.0.13
+    var goal by remember { mutableStateOf<GoalStats?>(null) }
+    var genres by remember { mutableStateOf<GenreReport?>(null) }
+    var completion by remember { mutableStateOf<CompletionReport?>(null) }
+    var cmpPreset by remember { mutableStateOf(ComparePreset.MONTH_VS_LAST) }
+    var comparison by remember { mutableStateOf<Comparison?>(null) }
+    var milestones by remember { mutableStateOf<List<Milestone>?>(null) }
+    var forgotten by remember { mutableStateOf<List<ForgottenSong>?>(null) }
+    var forgottenLimit by remember { mutableIntStateOf(30) }
+    var newShare by remember { mutableStateOf<List<StatBar>?>(null) }
+    var loyalty by remember { mutableStateOf<List<Loyalty>?>(null) }
+    var recap by remember { mutableStateOf<Recap?>(null) }
+    var recapImage by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var sharing by remember { mutableStateOf(false) }
+    val goalMin = remember(version) { V2Settings.get(ctx).dailyGoalMin }
+    val recapC1 = MaterialTheme.colorScheme.primary.toArgb(); val recapC2 = MaterialTheme.colorScheme.tertiary.toArgb()
+    val profileLabel = remember(version) { runCatching { com.metrolist.music.discover.v21.V21Profiles.active(ctx).let { it.emoji + " " + it.name } }.getOrDefault("") }
 
     LaunchedEffect(version) {
         ix = runCatching { StatsCache.index(ctx, db) }.onFailure { failed = true }.getOrNull()
@@ -175,6 +208,51 @@ fun StatsScreen(onBack: () -> Unit) {
         val i = ix ?: return@LaunchedEffect
         report = runCatching { StatsCache.report(i, period) }.getOrNull()
         artistLimit = 20; songLimit = 25; albumLimit = 20; discLimit = 20; oneLimit = 20
+    }
+    LaunchedEffect(ix, goalMin) {
+        val i = ix ?: return@LaunchedEffect
+        goal = if (goalMin > 0) withContext(Dispatchers.Default) { runCatching { StatsPlus.goal(i, V2Engine.now(), goalMin) }.getOrNull() } else null
+    }
+    // period-bound extras: computed when their section is open, kept for the report they were made from
+    var extrasFor by remember { mutableStateOf<StatsReport?>(null) }
+    LaunchedEffect(report, sec) {
+        val r = report ?: return@LaunchedEffect
+        val i = ix ?: return@LaunchedEffect
+        if (r.period.key != period.key) return@LaunchedEffect
+        if (extrasFor !== r) { genres = null; completion = null; recap = null; recapImage = null; extrasFor = r }
+        if (sec != Sec.GENRES && sec != Sec.RECAP && sec != Sec.COMPLETION) return@LaunchedEffect
+        val rows = withContext(Dispatchers.Default) { i.rows.filter { it.end in r.window } }
+        if ((sec == Sec.GENRES || sec == Sec.RECAP) && genres == null) {
+            genres = withContext(Dispatchers.Default) {
+                runCatching {
+                    val est = V2Engine.estimator(ctx)
+                    StatsPlus.genres(rows, { t -> synchronized(est) { V2Engine.vibeOf(ctx, t) } }, { t -> synchronized(est) { est.hasOwnEvidence(t) } })
+                }.getOrNull()
+            }
+        }
+        if (sec == Sec.RECAP && recap == null) {
+            val rc = StatsPlus.recap(r, genres)
+            recapImage = withContext(Dispatchers.Default) { runCatching { renderRecap(rc, profileLabel, recapC1, recapC2) }.getOrNull() }
+            recap = rc
+        }
+        if (sec == Sec.COMPLETION && completion == null) completion = withContext(Dispatchers.Default) { StatsPlus.completion(rows) }
+    }
+    // all-time extras: kept per history snapshot
+    var plusFor by remember { mutableStateOf<StatsIndex?>(null) }
+    LaunchedEffect(ix, sec, cmpPreset) {
+        val i = ix ?: return@LaunchedEffect
+        if (plusFor !== i) { milestones = null; forgotten = null; newShare = null; loyalty = null; comparison = null; plusFor = i }
+        val now = V2Engine.now()
+        when (sec) {
+            Sec.COMPARE -> comparison = withContext(Dispatchers.Default) { runCatching { StatsPlus.compare(i, cmpPreset, now) }.getOrNull() }
+            Sec.MILESTONES -> if (milestones == null) milestones = withContext(Dispatchers.Default) { runCatching { StatsPlus.milestones(i, now) }.getOrDefault(emptyList()) }
+            Sec.FORGOTTEN -> if (forgotten == null) forgotten = withContext(Dispatchers.Default) { runCatching { StatsPlus.forgotten(i, now) }.getOrDefault(emptyList()) }
+            Sec.DISCOVERY -> if (newShare == null) {
+                newShare = withContext(Dispatchers.Default) { runCatching { StatsPlus.newShareByMonth(i, now) }.getOrNull() }
+                loyalty = withContext(Dispatchers.Default) { runCatching { StatsPlus.loyalty(i, now) }.getOrNull() }
+            }
+            else -> {}
+        }
     }
     val top = stack.lastOrNull()
     LaunchedEffect(ix, top) {
@@ -202,14 +280,14 @@ fun StatsScreen(onBack: () -> Unit) {
     }
 
     V2Page(title = "📊 סטטיסטיקות", subtitle = "רק הפרופיל הפעיל: ${runCatching { com.metrolist.music.discover.v21.V21Profiles.active(ctx).let { it.emoji + " " + it.name } }.getOrDefault("")}", onBack = back) {
-        // period picker: unit pills, then ‹ label › arrows
-        item(key = "units") {
+        // period picker: unit pills, then ‹ label › arrows (13.7.0.13: not for sections that ignore the period)
+        if (!sec.independent) item(key = "units") {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = pad, vertical = 4.dp)) {
                 val units = listOf(StatsUnit.WEEK to "שבוע", StatsUnit.MONTH to "חודש", StatsUnit.YEAR to "שנה", StatsUnit.ALL to "הכל")
                 items(units.size) { i -> Pill(units[i].second, selected = unit == units[i].first) { unit = units[i].first; offset = 0 } }
             }
         }
-        item(key = "arrows") {
+        if (!sec.independent) item(key = "arrows") {
             val now = V2Engine.now()
             val first = ix?.firstPlay
             val canBack = unit != StatsUnit.ALL && (first == null || StatsPeriods.window(StatsPeriod(unit, offset), now, first).from > first)
@@ -222,7 +300,7 @@ fun StatsScreen(onBack: () -> Unit) {
         }
         // direct pick of a month or a year that has listening
         val first = ix?.firstPlay
-        if (first != null && (unit == StatsUnit.MONTH || unit == StatsUnit.YEAR)) item(key = "jump_${unit.name}") {
+        if (!sec.independent && first != null && (unit == StatsUnit.MONTH || unit == StatsUnit.YEAR)) item(key = "jump_${unit.name}") {
             val now = V2Engine.now()
             val today = DayClock.date(now)
             val opts: List<Pair<String, Int>> = if (unit == StatsUnit.MONTH) {
@@ -244,13 +322,35 @@ fun StatsScreen(onBack: () -> Unit) {
         val r = report
         val i = ix
         if (failed) { item(key = "fail") { Hint("לא הצלחתי לקרוא את ההיסטוריה 😕") }; return@V2Page }
+        if (sec.independent) {
+            if (i == null) { item(key = "loading") { Loading() }; return@V2Page }
+            when (sec) {
+                Sec.COMPARE -> compareItems(cmpPreset, comparison?.takeIf { plusFor === i }, pad) { cmpPreset = it; comparison = null }
+                Sec.MILESTONES -> milestoneItems(milestones, pad)
+                Sec.FORGOTTEN -> forgottenItems(forgotten, pad, compact, forgottenLimit, { forgottenLimit += 50 },
+                    onPlayAll = { forgotten?.let { l -> pc?.playTracks(l.map { it.track }, "💔 אהובים שנשכחו") } },
+                    onShuffle = { forgotten?.let { l -> pc?.playTracks(l.take(50).shuffled().map { it.track }, "💔 מיקס אהובים שנשכחו") } },
+                    onPlay = { k -> forgotten?.let { l -> pc?.playTracks(l.map { it.track }, "💔 אהובים שנשכחו", k) } })
+                else -> {}
+            }
+            return@V2Page
+        }
         if (r == null || i == null || r.period.key != period.key) { item(key = "loading") { Loading() }; return@V2Page }
         if (r.isEmpty) { item(key = "empty") { StatCard("אין האזנות בתקופה הזו", pad) { Hint("נסה תקופה אחרת, או ״הכל״.", Modifier.padding(0.dp)) } }; return@V2Page }
         when (sec) {
-            Sec.OVERVIEW -> overviewItems(r, pad, exporting) {
+            Sec.OVERVIEW -> {
+                goalItems(goal, goalMin, pad) { V2Settings.get(ctx).dailyGoalMin = it }
+                overviewItems(r, pad, exporting) {
                 exporting = true
                 scope.launch { val ok = exportCsv(ctx, i, r); exporting = false; if (!ok) toast(ctx, "לא הצלחתי לייצא 😕") }
+                }
             }
+            Sec.RECAP -> recapItems(recap, recapImage?.asImageBitmap(), pad, sharing) {
+                val bmp = recapImage
+                if (bmp != null && !sharing) { sharing = true; scope.launch { val ok = shareRecap(ctx, bmp, r.label); sharing = false; if (!ok) toast(ctx, "לא הצלחתי לשתף 😕") } }
+            }
+            Sec.GENRES -> genreItems(genres, pad)
+            Sec.COMPLETION -> completionItems(completion, pad)
             Sec.ARTISTS -> {
                 item(key = "ar_t") { Hint("${num(r.artists.size)} אמנים · לפי זמן האזנה · לחיצה לפרטים") }
                 val n = minOf(artistLimit, r.artists.size)
@@ -275,7 +375,11 @@ fun StatsScreen(onBack: () -> Unit) {
             }
             Sec.TRENDS -> trendItems(r, pad, trendGrain) { trendGrain = it }
             Sec.HABITS -> habitItems(r, pad, compact, onSong = { stack.add(Detail(false, it)) }, onArtist = { stack.add(Detail(true, it)) })
-            Sec.DISCOVERY -> discoveryItems(r, pad, compact, discLimit, oneLimit, { discLimit += 30 }, { oneLimit += 30 }) { stack.add(Detail(true, it)) }
+            Sec.DISCOVERY -> {
+                discoveryItems(r, pad, compact, discLimit, oneLimit, { discLimit += 30 }, { oneLimit += 30 }) { stack.add(Detail(true, it)) }
+                extraDiscoveryItems(newShare, loyalty, pad)
+            }
+            else -> {}
         }
     }
 }

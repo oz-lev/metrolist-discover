@@ -41,7 +41,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val SPEEDS = listOf(1f, 1.25f, 1.5f, 0.75f)
-private val SLEEPS = listOf(15, 30, 60, 0)
 
 /** v2.1 tools row under the player's vibe buttons: panic, karaoke, smart shuffle, A-B loop, speed, gentle sleep, save queue. */
 @Composable
@@ -60,7 +59,13 @@ fun NowPlayingTools() {
     var busy by remember { mutableStateOf(false) }
     LaunchedEffect(sleepEnd) { while (sleepEnd > 0L) { now = System.currentTimeMillis(); delay(15_000) } }
 
-    val sleepLabel = if (sleepEnd > now) "😴 ${((sleepEnd - now) / 60_000L + 1)} דק׳" else "😴 שינה"
+    val endOfSong by V21Playback.sleepAtSongEnd.collectAsState()
+    var sleepSheet by remember { mutableStateOf(false) }
+    val sleepLabel = when {
+        endOfSong -> "😴 סוף השיר"
+        sleepEnd > now -> "😴 ${((sleepEnd - now) / 60_000L + 1)} דק׳"
+        else -> "😴 שינה"
+    }
     val abLabel = when { loop != null -> "🔁 A-B ✕"; aMark != null -> "🔁 סמן B"; else -> "🔁 A-B" }
     val items = listOf<Pair<String, () -> Unit>>(
         "🧯 פאניקה" to {
@@ -79,11 +84,8 @@ fun NowPlayingTools() {
             val next = SPEEDS[(SPEEDS.indexOf(speed).coerceAtLeast(0) + 1) % SPEEDS.size]
             V21Playback.setSpeed(next); speed = next; toast(ctx, "מהירות ${next}x")
         },
-        sleepLabel to {
-            val curIdx = if (sleepEnd > now) SLEEPS.indexOfFirst { it * 60_000L >= sleepEnd - now }.coerceAtLeast(0) else -1
-            val next = SLEEPS[(curIdx + 1) % SLEEPS.size]
-            if (next == 0) { V21Playback.cancelSleep(); toast(ctx, "טיימר השינה בוטל") } else { V21Playback.startSleep(ctx, next); now = System.currentTimeMillis(); toast(ctx, "😴 נרדם בעדינות בעוד $next דק׳") }
-        },
+        // 13.7.0.13: the chip opens quick presets + the fade length (the cycling tap of 13.7.0.x is gone)
+        sleepLabel to { sleepSheet = true },
         "💾 שמור תור" to {
             val q = V21Playback.currentQueue()
             if (q == null) toast(ctx, "אין תור") else {
@@ -101,7 +103,60 @@ fun NowPlayingTools() {
             }
         }
     }
+    if (sleepSheet) SleepTimerDialog(active = sleepEnd > now || endOfSong, onDismiss = { sleepSheet = false }) { now = System.currentTimeMillis() }
     if (karaoke) Dialog(onDismissRequest = { karaoke = false }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         com.metrolist.music.discover.v21.ui.KaraokeScreen(onBack = { karaoke = false })
+    }
+}
+
+
+private val SLEEP_PRESETS = listOf(5, 10, 15, 20, 30, 45, 60, 90, 120)
+private val FADE_PRESETS = listOf(1, 3, 5, 10)
+
+/** 13.7.0.13: sleep timer presets (minutes or the end of this song) and the fade-out length, saved per profile. */
+@Composable
+private fun SleepTimerDialog(active: Boolean, onDismiss: () -> Unit, onChanged: () -> Unit) {
+    val ctx = LocalContext.current
+    val set = com.metrolist.music.discover.v2.V2Settings.get(ctx)
+    var fade by remember { mutableStateOf(set.sleepFadeMin) }
+    com.metrolist.music.discover.v2.ui.V2Rtl {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("😴 טיימר שינה עדין") },
+            text = {
+                androidx.compose.foundation.layout.Column {
+                    Text("המוזיקה נחלשת בהדרגה ונעצרת.", style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+                    androidx.compose.foundation.layout.Spacer(Modifier.padding(top = 8.dp))
+                    Text("כמה זמן?", fontWeight = FontWeight.Bold)
+                    SLEEP_PRESETS.chunked(3).forEach { row ->
+                        androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+                            row.forEach { m ->
+                                com.metrolist.music.discover.v2.ui.Pill("$m דק׳") {
+                                    V21Playback.startSleep(ctx, m); onChanged(); toast(ctx, "😴 נרדם בעדינות בעוד $m דק׳"); onDismiss()
+                                }
+                            }
+                        }
+                    }
+                    androidx.compose.foundation.layout.Row(modifier = Modifier.padding(top = 6.dp)) {
+                        com.metrolist.music.discover.v2.ui.Pill("🎵 בסוף השיר הזה") {
+                            if (V21Playback.startSleepAtSongEnd(ctx)) { onChanged(); toast(ctx, "😴 נעצר בסוף השיר הזה"); onDismiss() } else toast(ctx, "אין שיר מתנגן")
+                        }
+                    }
+                    androidx.compose.foundation.layout.Spacer(Modifier.padding(top = 10.dp))
+                    Text("דעיכה: $fade דק׳ אחרונות", fontWeight = FontWeight.Bold)
+                    FADE_PRESETS.chunked(3).forEach { row ->
+                        androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+                            row.forEach { f ->
+                                com.metrolist.music.discover.v2.ui.Pill("$f דק׳", selected = f == fade) { fade = f; set.sleepFadeMin = f; V21Playback.updateFade(ctx) }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("סגור") } },
+            dismissButton = {
+                if (active) androidx.compose.material3.TextButton(onClick = { V21Playback.cancelSleep(); onChanged(); toast(ctx, "טיימר השינה בוטל"); onDismiss() }) { Text("בטל טיימר") }
+            },
+        )
     }
 }

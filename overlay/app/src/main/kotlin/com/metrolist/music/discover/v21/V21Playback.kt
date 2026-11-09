@@ -56,6 +56,9 @@ object V21Playback {
     val loop = MutableStateFlow<AbLoop?>(null)
     val aMark = MutableStateFlow<Long?>(null)
     val sleepEndAt = MutableStateFlow(0L)
+    /** 13.7.0.13: "stop at the end of this song" (the end follows the song, so a seek moves it too) */
+    val sleepAtSongEnd = MutableStateFlow(false)
+    private var sleepSongId: String? = null
     private var sleepFadeMs = 0L
     private var sleepSavedVolume = -1f
     private var autoEqApplied = false
@@ -125,19 +128,23 @@ object V21Playback {
         // A-B loop
         val l = loop.value
         if (l != null && AbLoops.shouldJump(l, p.currentPosition)) p.seekTo(l.a)
+        // 13.7.0.13: end of this song: the timer's end follows the song's remaining time (fade included)
+        if (sleepAtSongEnd.value) {
+            val dur = p.duration
+            if (p.currentMediaItem?.mediaId != sleepSongId) { stopForSleep(s, p); return }
+            val speed = p.playbackParameters.speed.coerceAtLeast(0.25f).toDouble()
+            if (dur > 0L) sleepEndAt.value = System.currentTimeMillis() + ((dur - p.currentPosition).coerceAtLeast(0L) / speed).toLong()
+            if (dur > 0L && dur - p.currentPosition <= 400L) { stopForSleep(s, p); return }
+            val f = V2Settings.get(s.applicationContext).sleepFadeMin * 60_000L
+            sleepFadeMs = minOf(f, maxOf(0L, dur - 1_000L))
+        }
         // gentle sleep
         val end = sleepEndAt.value
         if (end > 0L) {
             val remaining = end - System.currentTimeMillis()
             if (sleepSavedVolume < 0f && remaining < sleepFadeMs) sleepSavedVolume = s.playerVolume.value
             if (sleepSavedVolume >= 0f) s.playerVolume.value = (sleepSavedVolume * SleepFade.volumeAt(remaining, sleepFadeMs)).coerceIn(0f, 1f)
-            if (remaining <= 0L) {
-                p.pause()
-                if (sleepSavedVolume >= 0f) s.playerVolume.value = sleepSavedVolume
-                sleepSavedVolume = -1f
-                sleepEndAt.value = 0L
-                toast(s.applicationContext, "😴 לילה טוב")
-            }
+            if (remaining <= 0L) stopForSleep(s, p)
         }
         // auto-like after N full listens: decided at 85 % of the song, through Metrolist's own like
         val ctx = s.applicationContext
@@ -296,7 +303,38 @@ object V21Playback {
     fun saveSlot(ctx: Context, index: Int, q: SavedQueue?) { QueueSlots.put(slots(ctx), index, q)[index].let { DiscoverStore.get(ctx).put("v21.qslot.$index", QueueSlots.encode(it)) } }
 
     // ------------------------------------------------------------------ controls for the UI
+    private fun stopForSleep(s: MusicService, p: Player) {
+        p.pause()
+        if (sleepSavedVolume >= 0f) s.playerVolume.value = sleepSavedVolume
+        sleepSavedVolume = -1f
+        sleepEndAt.value = 0L
+        sleepAtSongEnd.value = false; sleepSongId = null
+        toast(s.applicationContext, "😴 לילה טוב")
+    }
+
+    /** 13.7.0.13: stop when the current song ends (fading over its last minutes). false = nothing is playing. */
+    fun startSleepAtSongEnd(ctx: Context): Boolean {
+        val p = player() ?: return false
+        val id = p.currentMediaItem?.mediaId ?: return false
+        if (p.duration <= 0L) return false
+        sleepSavedVolume = -1f
+        sleepSongId = id
+        sleepFadeMs = minOf(V2Settings.get(ctx).sleepFadeMin * 60_000L, maxOf(0L, p.duration - p.currentPosition - 1_000L))
+        sleepEndAt.value = System.currentTimeMillis() + (p.duration - p.currentPosition).coerceAtLeast(0L)
+        sleepAtSongEnd.value = true
+        return true
+    }
+
+    /** 13.7.0.13: a new fade length applies to a timer that is already running. */
+    fun updateFade(ctx: Context) {
+        val end = sleepEndAt.value
+        if (end <= 0L) return
+        val total = maxOf(0L, end - System.currentTimeMillis())
+        if (sleepSavedVolume < 0f) sleepFadeMs = minOf(V2Settings.get(ctx).sleepFadeMin * 60_000L, total)
+    }
+
     fun startSleep(ctx: Context, minutes: Int) {
+        sleepAtSongEnd.value = false; sleepSongId = null
         val fade = V2Settings.get(ctx).sleepFadeMin.coerceAtMost(minutes)
         sleepFadeMs = fade * 60_000L
         sleepSavedVolume = -1f
@@ -304,6 +342,7 @@ object V21Playback {
     }
 
     fun cancelSleep() {
+        sleepAtSongEnd.value = false; sleepSongId = null
         val s = service()
         if (s != null && sleepSavedVolume >= 0f) s.playerVolume.value = sleepSavedVolume
         sleepSavedVolume = -1f
