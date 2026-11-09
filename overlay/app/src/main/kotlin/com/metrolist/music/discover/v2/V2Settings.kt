@@ -124,6 +124,8 @@ class V2Settings private constructor(private val store: DiscoverStore) {
     var djOrder: Boolean get() = b("v21.djOrder", true); set(v) = save("v21.djOrder", v)
     /** fetch related / radio songs online for the main mix (more new songs than the library alone) */
     var onlineNew: Boolean get() = b("v21.onlineNew", true); set(v) = save("v21.onlineNew", v)
+    /** 13.7.0.14: listening context in every vibe mix (what you are into now, time of day, no repeats of the last hours) */
+    var mixContext: Boolean get() = b("v21.context", true); set(v) = save("v21.context", v)
     /** offline nightly batch size: follows the mix length (endless -> 100) */
     val offlineSize: Int get() = if (mixLength == 50) 50 else 100
     // global (all profiles): the auto-switch schedule
@@ -164,7 +166,7 @@ class V2Settings private constructor(private val store: DiscoverStore) {
             "v21.seedLock", "v21.seed", "v21.weekday", "v21.defaultMood", "v21.daylist", "v21.ramp", "v21.favEvery", "v21.neverHeard",
             "v21.maxLen", "v21.artistGap", "v21.lang", "v21.explicit", "v21.autoEq", "v21.autoEqK", "v21.flow", "v21.sleepFade",
             "v21.smartEvery", "v21.secret", "v21.autoLike", "v21.autoLikeN", "v21.djIntros", "v21.bubbleFreq", "v21.challenge", "v21.goal", "v21.jumpBack",
-            "v21.mixLen", "v21.mixNew", "v21.liveLearn", "v21.djOrder", "v21.onlineNew").forEach { store.put(it, null) }
+            "v21.mixLen", "v21.mixNew", "v21.liveLearn", "v21.djOrder", "v21.onlineNew", "v21.context").forEach { store.put(it, null) }
         _version.value = _version.value + 1
     }
 

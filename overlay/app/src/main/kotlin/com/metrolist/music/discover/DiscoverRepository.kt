@@ -61,8 +61,16 @@ class DiscoverRepository(private val context: Context, private val database: Mus
         store.get(k)?.split('\n')?.filterTo(LinkedHashSet()) { it.isNotBlank() } ?: LinkedHashSet()
     fun hiddenSongs(): Set<String> = readSet(K_HIDDEN_SONGS)
     fun hiddenArtists(): Set<String> = readSet(K_HIDDEN_ARTISTS)
-    fun hiddenCount(): Int = hiddenSongs().size + hiddenArtists().size
-    fun clearHidden() { store.put(K_HIDDEN_SONGS, null); store.put(K_HIDDEN_ARTISTS, null) }
+    fun hiddenCount(): Int = hiddenSongs().size + hiddenArtists().size + lessArtists().size
+    fun clearHidden() { store.put(K_HIDDEN_SONGS, null); store.put(K_HIDDEN_ARTISTS, null); store.put(K_LESS_ARTISTS, null) }
+    // 13.7.0.14: "less like this" (soft, per artist, capped 3) and the whole feedback the mixes read
+    fun lessArtists(): Map<String, Int> = com.metrolist.music.discover.engine.Feedback.decodeLess(store.get(K_LESS_ARTISTS))
+    fun feedback(): com.metrolist.music.discover.engine.Feedback = com.metrolist.music.discover.engine.Feedback(hiddenSongs(), hiddenArtists(), lessArtists())
+    /** 👎 on a song: it is hidden (like "not for me") and its artist gets one "less" step. */
+    fun lessLike(track: TrackMeta) {
+        hide(track, wholeArtist = false)
+        store.put(K_LESS_ARTISTS, com.metrolist.music.discover.engine.Feedback.encodeLess(com.metrolist.music.discover.engine.Feedback(lessArtists = lessArtists()).withLess(track.mainArtist).lessArtists))
+    }
 
     /** Hides a song (or its whole main artist) from Discover; on a song Discover recommended it also teaches the self-tuner like a skip. */
     fun hide(track: TrackMeta, wholeArtist: Boolean) {
@@ -385,6 +393,7 @@ class DiscoverRepository(private val context: Context, private val database: Mus
     companion object {
         const val K_HIDDEN_SONGS = "discover.hiddenSongs"
         const val K_HIDDEN_ARTISTS = "discover.hiddenArtists"
+        const val K_LESS_ARTISTS = "discover.lessArtists"
 
         /** (skipFraction, skipSeconds, fullFraction) as last computed from the user's data, or the defaults. */
         fun thresholds(store: DiscoverStore): Triple<Double, Double, Double> =

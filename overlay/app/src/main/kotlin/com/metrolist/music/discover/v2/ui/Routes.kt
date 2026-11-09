@@ -27,6 +27,8 @@ object V2Routes {
     const val REPLAY = "discover/replay"
     // 13.7.0.11
     const val STATS = "discover/stats"
+    // 13.7.0.14
+    const val MIXLAB = "discover/mixlab"
 }
 
 fun discoverRoutes(builder: NavGraphBuilder, navController: NavHostController) {
@@ -43,4 +45,5 @@ fun discoverRoutes(builder: NavGraphBuilder, navController: NavHostController) {
     builder.composable(V2Routes.BLEND) { com.metrolist.music.discover.v21.ui.BlendScreen(onBack = { navController.navigateUp() }) }
     builder.composable(V2Routes.REPLAY) { com.metrolist.music.discover.v21.ui.ReplayScreen(onBack = { navController.navigateUp() }) }
     builder.composable(V2Routes.STATS) { com.metrolist.music.discover.v21.ui.StatsScreen(onBack = { navController.navigateUp() }) }
+    builder.composable(V2Routes.MIXLAB) { com.metrolist.music.discover.v21.ui.MixLabScreen(onBack = { navController.navigateUp() }) }
 }

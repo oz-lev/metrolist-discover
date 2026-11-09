@@ -150,6 +150,11 @@ fun MixesHubScreen(onBack: () -> Unit) {
             }
         }
         item(key = "special_title") { SectionTitle("מיקסים מיוחדים") }
+        item(key = "mixlab") {
+            SpecialCard("🧪", "בונה מיקסים", "אמנים, מצב רוח, אנרגיה, מוכר/חדש, אורך ושפה", Brush.linearGradient(listOf(Color(0xFF7C3AED), Color(0xFF22D3EE)))) {
+                hubNav.navigate(V2Routes.MIXLAB)
+            }
+        }
         item(key = "flip") {
             SpecialCard("🔄", "רגש להיפך", "מתחיל בעצוב ונגמר במסיבה", Brush.linearGradient(listOf(Color(0xFF1E3A8A), Color(0xFFDB2777), Color(0xFFF59E0B)))) {
                 run("הופך רגשות…") { V2Engine.moodFlip(ctx, db) }

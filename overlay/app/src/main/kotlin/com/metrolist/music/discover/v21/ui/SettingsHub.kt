@@ -206,6 +206,7 @@ fun SettingsHubScreen(onBack: () -> Unit, onNavigate: (String) -> Unit) {
         add(SItem(g2, "למידה בזמן אמת", "דילוג מוקדם מזיז את שאר המיקס מיד, האזנה מלאה מקדמת דומים") { Toggle("⚡ למידה בזמן אמת", "דילוג מוקדם = פחות מהאמן והווייב הזה עד סוף הסשן", s.liveLearning) { s.liveLearning = it } })
         add(SItem(g2, "סידור כמו דיג'יי", "האנרגיה עולה ויורדת בגלים חלקים, בלי אותו אמן ברצף") { Toggle("🎧 סידור כמו דיג'יי", "גלי אנרגיה חלקים במקום סדר דירוג", s.djOrder) { s.djOrder = it } })
         add(SItem(g2, "עוד שירים חדשים מהרשת", "רדיו ושירים קשורים מ-YouTube Music, לא רק מהספרייה שלך") { Toggle("🌐 עוד שירים חדשים מהרשת", "כבוי = רק מהספרייה וההיסטוריה (מהיר יותר)", s.onlineNew) { s.onlineNew = it; V2Engine.invalidate() } })
+        add(SItem(g2, "הקשר האזנה", "מה שאתה שומע עכשיו עולה, שעות היום, בלי לחזור על מה ששמעת בשעות האחרונות") { Toggle("🧠 הקשר האזנה", "כבוי = הדירוג של 13.7.0.13", s.mixContext) { s.mixContext = it; V2Engine.invalidate() } })
         add(SItem(g2, "מצב רוח לפי יום בשבוע", "למשל: שישי = מזרחית, ראשון = רגוע") {
             val m = s.weekdayMoods
             NavRow("📆 מצב רוח לפי יום בשבוע", if (m.isEmpty()) "אוטומטי לפי השעה" else DAYS.filter { it.second in m }.joinToString(" · ") { "${it.first}׳ ${m[it.second]?.emoji}" }) { weekdayDialog = true }

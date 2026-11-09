@@ -24,6 +24,12 @@
 
 את האנרגיה ומצב הרוח של שיר YouTube לא נותן, אז המנוע מעריך אותם מהאמן, מילים בשם השיר (remix / slowed / phonk / live / acoustic), כתב עברי, שירים קשורים, ומהדילוגים והשמיעות המלאות שלך — ומתקן את עצמו עם הזמן.
 
+## חדש ב-13.7.0.14 🎛️
+- **🧠 הקשר האזנה** בכל מיקס: מה שאתה בקטע שלו עכשיו עולה, מה ששמעת בשעות האחרונות מחכה, אמן שמילא את היומיים האחרונים נח קצת, ולופ ישן נעלם לאט. אפשר לכבות בהגדרות (🧠 הקשר האזנה).
+- **מיקסים חדשים בשורת המיקסים האישיים:** 🔁 על ריפיט עכשיו · 💎 עומק · 🌅/☀️/🌆/🌙 מיקס לפי שעה ביום · 📼 פלאשבק (חודש מהעבר) · 🇮🇱 רק עברית · 🌍 בלי עברית.
+- **🧪 בונה מיקסים** (ארגז הכלים או מרכז המיקסים): אמנים, מצב רוח, אנרגיה, מוכר↔חדש, אורך, שפה. אמן אחד: 🎤 רדיו שלו. שניים: 🤝 Blend.
+- **מתחת לנגן:** 💡 למה השיר הזה · 📻 רדיו מהשיר · 👎 פחות כזה · 🚫 בלי האמן · 🧭 כמה חדש במיקס האינסופי.
+
 ## חדש ב-v2.1 (ניסיונית) 🧪
 - 🎨 סטודיו עיצוב לכל האפליקציה: Neon Night, זהב מזרחי, פאנק אדום, אוקיינוס, AMOLED, שקיעה, יער, דינמי (לפי העטיפה), Metrolist קלאסי · צבע הדגשה · פינות · גופן עברי (Heebo/Rubik) · גודל טקסט · ערכה אקראית כל יום · סרגל ניווט ונגן מיני מעוצבים
 - 👥 פרופילים (אני, חדר כושר, עבודה, לילה, רכב, מסיבה, אורח + שלך) עם מעבר אוטומטי לפי שעה · 🕵️ מצב סודי
@@ -163,6 +169,30 @@ reads `/releases/latest`, which GitHub never points at a pre-release.
 - Real data, locally: `python3 tools/backup_to_tsv.py Metrolist_xxx.backup /tmp/me && kotlinc overlay/.../engine/*.kt tools/eval-cli/EvalCli.kt -include-runtime -d eval.jar && java -cp eval.jar EvalCliKt --tsv /tmp/me --top 20`
   (or on the phone: Discover sheet -> "Test on my history"). Personal data never goes to the repo or CI.
 - Updating the baseline after an intentional improvement: `java -cp eval.jar EvalCliKt --synthetic --write-baseline overlay/app/src/test/resources/discover/baseline.properties`.
+
+## 13.7.0.14 listening context, more mixes, mix builder, radio, feedback (measured)
+- `engine/MixContext.kt`: `ContextConfig` + `MixContext.boosts(history, at, cfg, feedback)` -> a per-track score carried in `PoolTrack.context`
+  and added to `VibeMixer.score` (so every vibe mix uses it). Momentum (recency-weighted real listens, half-life 7 d, saturating, weight 0.5),
+  hour fit (+-2 h lift for songs with >= 3 listens, 0.1), cooldown (heard in the last 12 h, up to -0.5), artist cooldown (> 12% of the last
+  2 days, slope 1), fading old taste (>= 5 listens, none for 60 d, -0.06), "less like this" (-0.25 per press per artist, capped 3).
+  `ContextConfig.OFF` = 13.7.0.13. `Feedback` (hidden songs, blocked artists, less-artists `discover.lessArtists`, per profile) filters the
+  snapshot pool and online songs. Setting `v21.context` (default on).
+- Measured (`EvalCli --tsv DIR --context`, `--context-grid`): one real history, 12 weekly cuts x 4 build hours (9/14/18/22), main mix as the
+  app builds it (endless, 30% new). First 35: hit (played, not skipped, next 7 d) 0.237 -> 0.312, of the familiar picks 0.282 -> 0.355,
+  hit within +-2 h of the build hour 0.076 -> 0.105, share heard in the 12 h before the build 0.032 -> 0.027, distinct artists 27.7 -> 28.0,
+  new share 0.253 -> 0.254. Momentum alone gives more hit (0.344) but repeats 3x more (0.110); hour fit and fading taste alone are neutral.
+- `engine/MoreMixes.kt`: on repeat (>= 3 listens in 14 d), deep cuts (<= 1 listen, loved artists round-robin), day part (lift >= 1.3 in
+  morning/noon/evening/night + 25% new), throwback (a calendar month >= 3 months back, rotating, minus the last 30 days), Hebrew only / no Hebrew
+  (`Lang.isHebrew`), song radio (related graph 2 hops + online radio + vibe), artist radio, blend of two artists (A, bridge at the vibe midpoint,
+  B). `PersonalMixes.today(show = 9)` leads with on-repeat and the day-part mix. `EvalCli --newmixes`: on repeat hit 0.58, Hebrew 0.39,
+  day part 0.23, deep cuts 0.08 (96% heard once: offline the library holds few never-played songs of loved artists), throwback 0.08 (by design).
+- `engine/MixLab.kt`: `MixRecipe` (<= 3 seed artists / songs, mood, energy, new share, size, language) -> `MixLab.build` with a reason per seeded
+  song; `WhyIndex` = the "why this song?" line. UI: `v21/ui/MixLabUi.kt` (route discover/mixlab, toolbox tile + mixes-hub card); now-playing
+  tools row: 💡 line, 📻 radio from this song (replaces the upcoming queue), 👎 less like this (song hidden + artist -1 step + live session skip +
+  next), 🚫 no more of this artist (confirm, upcoming songs of the artist removed), 🧭 discovery 10/30/45/60% (`MixSession.newShare` is now a var).
+- Discover row knobs re-tested (`--grid3`: time-of-day weight, short/long half-lives, short-term share, skip and partial weights, fatigue):
+  no variant improved hit without losing novelty or new-song recall (e.g. short-term share 0.75: hit 0.079 -> 0.094 but novelty 0.912 -> 0.831
+  and NEW r@100 0.025 -> 0.018), so `DiscoverEngine` is unchanged. 171 engine tests (Mixes1314Test +18).
 
 ## 13.7.0.9 endless main mix, real-time learning, per-track vibe, DJ order, personal mixes (measured)
 - `engine/MixFlow.kt`: `MixSession` (first batch 40, then batches of 20 that follow the song playing now, never repeating inside the

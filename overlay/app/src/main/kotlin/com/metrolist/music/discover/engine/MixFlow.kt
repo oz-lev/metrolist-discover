@@ -170,8 +170,8 @@ object EnergyArc {
  */
 class MixSession(
     val baseTarget: VibeTarget,
-    /** share of never-heard songs per batch, 0..1 (0.35 = 65% familiar / 35% new) */
-    val newShare: Double = 0.35,
+    /** share of never-heard songs per batch, 0..1 (0.35 = 65% familiar / 35% new); 13.7.0.14: changeable while it plays */
+    @Volatile var newShare: Double = 0.35,
     val djOrder: Boolean = true,
     val taste: SessionTaste = SessionTaste(),
 ) {

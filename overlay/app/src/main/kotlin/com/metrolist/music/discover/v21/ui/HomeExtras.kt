@@ -135,6 +135,7 @@ fun V21HomeExtras(run: (String, suspend () -> BuiltMix) -> Unit) {
         // toolbox
         Text("ארגז הכלים 🧰", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(start = 16.dp, top = 14.dp, bottom = 4.dp))
         val tools = listOf(
+            Tool("🧪", "בונה מיקסים", 0xFF7C3AED, 0xFF22D3EE) { nav.navigate(V2Routes.MIXLAB) },
             Tool("🎤", "קריוקי", 0xFFDB2777, 0xFF7C3AED) { nav.navigate(V2Routes.KARAOKE) },
             Tool("🚗", "מצב רכב", 0xFF0EA5E9, 0xFF1E3A8A) { nav.navigate(V2Routes.CAR) },
             Tool("👆", "טעימות", 0xFFF97316, 0xFFDB2777) { nav.navigate(V2Routes.SAMPLES) },

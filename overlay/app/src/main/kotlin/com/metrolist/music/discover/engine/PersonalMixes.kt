@@ -13,7 +13,9 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.random.Random
 
-enum class PersonalKind { DISCOVERIES, LAST_SEASON, ARTIST, SESSION, CHANGE_DIRECTION }
+enum class PersonalKind { DISCOVERIES, LAST_SEASON, ARTIST, SESSION, CHANGE_DIRECTION,
+    /** 13.7.0.14 (MoreMixes) */
+    ON_REPEAT, DEEP_CUTS, DAY_PART, THROWBACK, LANGUAGE }
 
 data class PersonalMix(val key: String, val kind: PersonalKind, val emoji: String, val titleHe: String, val subtitleHe: String, val tracks: List<PoolTrack>)
 
@@ -57,6 +59,10 @@ object PersonalMixes {
         val byKind = all.groupBy { it.kind }
         val pick = ArrayList<PersonalMix>()
         byKind[PersonalKind.DISCOVERIES]?.firstOrNull()?.let { pick += it }
+        // 13.7.0.14: "on repeat now" and the mix of this part of the day lead the row when they exist
+        val fixed = ArrayList<PersonalMix>()
+        byKind[PersonalKind.ON_REPEAT]?.firstOrNull()?.let { fixed += it }
+        byKind[PersonalKind.DAY_PART]?.firstOrNull { m -> DayPart.entries.firstOrNull { it.name == m.key.removePrefix("daypart_") }?.hours?.contains(hour) == true }?.let { fixed += it }
         val sessions = byKind[PersonalKind.SESSION].orEmpty()
         val now = sessions.firstOrNull { m -> SessionType.entries.firstOrNull { it.name == m.key.removePrefix("session_") }?.defaultHours?.contains(hour) == true }
         now?.let { pick += it }
@@ -65,8 +71,11 @@ object PersonalMixes {
         byKind[PersonalKind.LAST_SEASON]?.firstOrNull()?.let { pick += it }
         byKind[PersonalKind.CHANGE_DIRECTION]?.firstOrNull()?.let { pick += it }
         sessions.filter { it !== now }.shuffled(rnd).firstOrNull()?.let { pick += it }
-        // the order rotates too (except the first card)
-        val head = pick.take(1); val tail = pick.drop(1).shuffled(rnd)
+        byKind[PersonalKind.DEEP_CUTS]?.firstOrNull()?.let { pick += it }
+        byKind[PersonalKind.THROWBACK]?.firstOrNull()?.let { pick += it }
+        byKind[PersonalKind.LANGUAGE].orEmpty().shuffled(rnd).firstOrNull()?.let { pick += it }
+        // the order rotates too (except the first cards)
+        val head = pick.take(1) + fixed; val tail = pick.drop(1).shuffled(rnd)
         return (head + tail).distinctBy { it.key }.take(show)
     }
 

@@ -32,7 +32,9 @@ enum class MoodPreset(val he: String, val en: String, val emoji: String, val tar
 }
 
 /** One track the mixer may use. familiarity 0 = never heard, 1 = heavy rotation. affinity = how much the user likes it (0..1). */
-data class PoolTrack(val track: TrackMeta, val vibe: Vibe, val familiarity: Double, val affinity: Double)
+data class PoolTrack(val track: TrackMeta, val vibe: Vibe, val familiarity: Double, val affinity: Double,
+    /** 13.7.0.14: listening-context adjustment (momentum, hour fit, cooldown, "less like this"); 0 = none. See MixContext. */
+    val context: Double = 0.0)
 
 /** The Mixes-hub sliders. Each is 0..1; null = follow the preset. */
 data class Sliders(val energy: Double? = null, val mizrahiEdm: Double? = null, val familiarNew: Double = 0.5)
@@ -51,7 +53,7 @@ class VibeMixer(private val random: Random = Random.Default) {
     }
 
     fun score(p: PoolTrack, t: VibeTarget, familiar: Double): Double =
-        1.0 - 2.2 * p.vibe.distanceTo(t) + 0.35 * p.affinity - 0.6 * abs(p.familiarity - familiar) + random.nextDouble() * 0.06
+        1.0 - 2.2 * p.vibe.distanceTo(t) + 0.35 * p.affinity - 0.6 * abs(p.familiarity - familiar) + p.context + random.nextDouble() * 0.06
 
     /** Sort by a score computed ONCE per track (the score has a little noise; sorting on a live noisy comparator crashes TimSort). */
     private fun rank(list: List<PoolTrack>, f: (PoolTrack) -> Double): List<PoolTrack> =
@@ -66,14 +68,15 @@ class VibeMixer(private val random: Random = Random.Default) {
      * not a side effect of the score), new songs spread evenly through the list, artist caps across both.
      * [session] adds the real-time learning adjustment. Returns fewer than [size] only when the pool is smaller.
      */
-    fun buildBalanced(pool: List<PoolTrack>, t: VibeTarget, size: Int, newShare: Double, session: SessionTaste? = null, newCutoff: Double = 0.15): List<PoolTrack> {
+    fun buildBalanced(pool: List<PoolTrack>, t: VibeTarget, size: Int, newShare: Double, session: SessionTaste? = null, newCutoff: Double = 0.15,
+                      maxPerArtist: Int? = null): List<PoolTrack> {
         val uniq = pool.distinctBy { it.track.id }
         if (uniq.isEmpty() || size <= 0) return emptyList()
         val share = newShare.coerceIn(0.0, 1.0)
         val famTarget = max(0.5, 1.0 - share)
         val fam = rank(uniq.filter { it.familiarity >= newCutoff }) { score(it, t, famTarget) + (session?.adjust(it) ?: 0.0) }
         val new = rank(uniq.filter { it.familiarity < newCutoff }) { score(it, t, 0.0) + (session?.adjust(it) ?: 0.0) }
-        val maxPer = max(2, size / 25)
+        val maxPer = maxPerArtist ?: max(2, size / 25)
         var nNew = min((size * share).roundToInt(), new.size)
         val nFam = min(size - nNew, fam.size)
         if (nFam < size - nNew) nNew = min(new.size, size - nFam)

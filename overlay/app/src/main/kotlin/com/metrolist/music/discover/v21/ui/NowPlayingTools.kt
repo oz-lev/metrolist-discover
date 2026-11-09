@@ -37,6 +37,7 @@ import com.metrolist.music.discover.v2.ui.playMix
 import com.metrolist.music.discover.v2.ui.rememberTap
 import com.metrolist.music.discover.v2.ui.toast
 import com.metrolist.music.discover.v21.V21Playback
+import com.metrolist.music.extensions.metadata
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -44,7 +45,7 @@ private val SPEEDS = listOf(1f, 1.25f, 1.5f, 0.75f)
 
 /** v2.1 tools row under the player's vibe buttons: panic, karaoke, smart shuffle, A-B loop, speed, gentle sleep, save queue. */
 @Composable
-fun NowPlayingTools() {
+fun NowPlayingTools(track: com.metrolist.music.discover.engine.TrackMeta? = null) {
     val ctx = LocalContext.current
     val db = LocalDatabase.current
     val pc = LocalPlayerConnection.current ?: return
@@ -59,6 +60,11 @@ fun NowPlayingTools() {
     var busy by remember { mutableStateOf(false) }
     LaunchedEffect(sleepEnd) { while (sleepEnd > 0L) { now = System.currentTimeMillis(); delay(15_000) } }
 
+    // 13.7.0.14: "why this song?", radio from this song, 👎 / 🚫 feedback, and the discovery dial of the endless mix
+    var why by remember { mutableStateOf<String?>(null) }
+    var blockAsk by remember { mutableStateOf(false) }
+    var discovery by remember { mutableStateOf(com.metrolist.music.discover.v2.V2Settings.get(ctx).mixNewShare) }
+    LaunchedEffect(track?.id) { why = null; if (track != null) why = runCatching { V2Engine.why(ctx, db, track) }.getOrNull() }
     val endOfSong by V21Playback.sleepAtSongEnd.collectAsState()
     var sleepSheet by remember { mutableStateOf(false) }
     val sleepLabel = when {
@@ -67,7 +73,32 @@ fun NowPlayingTools() {
         else -> "😴 שינה"
     }
     val abLabel = when { loop != null -> "🔁 A-B ✕"; aMark != null -> "🔁 סמן B"; else -> "🔁 A-B" }
-    val items = listOf<Pair<String, () -> Unit>>(
+    val discoveryLabel = DISCOVERY_STEPS.minByOrNull { kotlin.math.abs(it.first - discovery) }?.second ?: "🧭 גילוי"
+    val trackItems = if (track == null) emptyList() else listOf<Pair<String, () -> Unit>>(
+        "📻 רדיו מהשיר" to {
+            if (!busy) { busy = true; scope.launch {
+                val m = runCatching { V2Engine.songRadio(ctx, db, track) }.getOrNull(); busy = false
+                val next = m?.tracks?.filter { it.id != track.id }.orEmpty()
+                if (next.isEmpty()) toast(ctx, "לא מצאתי רדיו לשיר הזה 😅") else { pc.replaceUpcoming(next); toast(ctx, "📻 רדיו של ${track.title}: ${next.size} שירים הבאים") }
+            } }
+        },
+        "👎 פחות כזה" to {
+            scope.launch {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { V2Engine.lessLikeThis(ctx, db, track) } }
+                runCatching { if (pc.player.currentMediaItem?.mediaId == track.id) pc.player.seekToNext() }
+                V21Playback.requestRerank()
+                toast(ctx, "👎 הבנתי. השיר לא יחזור במיקסים, ופחות מ${track.artistLabel}")
+            }
+        },
+        "🚫 בלי האמן" to { blockAsk = true },
+        discoveryLabel to {
+            val i = DISCOVERY_STEPS.indexOfFirst { it.second == discoveryLabel }
+            val (v, label) = DISCOVERY_STEPS[(i + 1) % DISCOVERY_STEPS.size]
+            V2Engine.setDiscovery(ctx, v); discovery = v
+            toast(ctx, "$label: ${(v * 100).toInt()}% שירים חדשים במיקס האינסופי (מהקבוצה הבאה)")
+        },
+    )
+    val items = trackItems + listOf<Pair<String, () -> Unit>>(
         "🧯 פאניקה" to {
             if (!busy) { busy = true; scope.launch { val m = runCatching { V2Engine.panic(ctx, db) }.getOrNull(); busy = false; if (m != null) pc.playMix(m, ctx) else toast(ctx, "נסה שוב") } }
         },
@@ -95,6 +126,10 @@ fun NowPlayingTools() {
             }
         },
     )
+    why?.let { w ->
+        Text("💡 $w", color = Color.White.copy(alpha = 0.78f), style = androidx.compose.material3.MaterialTheme.typography.bodySmall, maxLines = 2,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
+    }
     LazyRow(contentPadding = PaddingValues(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         items(items.size) { i ->
             val (label, action) = items[i]
@@ -102,6 +137,25 @@ fun NowPlayingTools() {
                 Text(label, color = Color.White, fontWeight = FontWeight.SemiBold)
             }
         }
+    }
+    if (blockAsk && track != null) com.metrolist.music.discover.v2.ui.V2Rtl {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { blockAsk = false },
+            title = { Text("🚫 בלי ${track.artistLabel}?") },
+            text = { Text("האמן לא יופיע יותר ב-Discover ובמיקסים של הפרופיל הזה. אפשר להחזיר בחלון Discover (\"להחזיר\").") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    blockAsk = false
+                    scope.launch {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { V2Engine.blockArtist(ctx, db, track) } }
+                        val removed = runCatching { removeUpcomingArtist(pc.player, track.mainArtist) }.getOrDefault(0)
+                        runCatching { if (pc.player.currentMediaItem?.mediaId == track.id) pc.player.seekToNext() }
+                        toast(ctx, "🚫 ${track.artistLabel} לא יחזור" + (if (removed > 0) " · הוצאתי $removed שירים שלו מהתור" else ""))
+                    }
+                }) { Text("כן, בלי האמן") }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { blockAsk = false }) { Text("ביטול") } },
+        )
     }
     if (sleepSheet) SleepTimerDialog(active = sleepEnd > now || endOfSong, onDismiss = { sleepSheet = false }) { now = System.currentTimeMillis() }
     if (karaoke) Dialog(onDismissRequest = { karaoke = false }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
@@ -111,6 +165,21 @@ fun NowPlayingTools() {
 
 
 private val SLEEP_PRESETS = listOf(5, 10, 15, 20, 30, 45, 60, 90, 120)
+
+/** 13.7.0.14: the endless mix's share of new songs, one tap per step. */
+private val DISCOVERY_STEPS = listOf(0.1 to "🏠 מוכר", 0.3 to "⚖️ מאוזן", 0.45 to "🧭 גילוי", 0.6 to "🚀 הרבה חדש")
+
+/** Removes the upcoming songs whose first artist is [artistId]; returns how many. */
+private fun removeUpcomingArtist(p: androidx.media3.common.Player, artistId: String): Int {
+    var n = 0
+    val cur = p.currentMediaItemIndex
+    for (i in p.mediaItemCount - 1 downTo cur + 1) {
+        val md = p.getMediaItemAt(i).metadata
+        val a = md?.artists?.firstOrNull()?.let { it.id ?: ("name:" + it.name.lowercase()) }
+        if (a == artistId) { p.removeMediaItem(i); n++ }
+    }
+    return n
+}
 private val FADE_PRESETS = listOf(1, 3, 5, 10)
 
 /** 13.7.0.13: sleep timer presets (minutes or the end of this song) and the fade-out length, saved per profile. */

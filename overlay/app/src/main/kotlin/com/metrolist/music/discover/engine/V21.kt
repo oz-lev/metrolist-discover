@@ -43,7 +43,8 @@ object ProfileScope {
     /** 13.7.0.10: Discover's caches, "not for me" lists and skip thresholds are per profile too (they leaked before). */
     private val SCOPED_EXTRA = setOf("tuner.state", "tuner.likeAwarded",
         "discover.cache", "discover.cacheTs", "mixes.cache", "mixes.cacheTs",
-        "discover.hiddenSongs", "discover.hiddenArtists", "profile.thresholds")
+        "discover.hiddenSongs", "discover.hiddenArtists", "profile.thresholds",
+        /* 13.7.0.14 */ "discover.lessArtists")
     /** keys copied once from the shared (main) value into every existing profile when 13.7.0.10 first runs */
     val MIGRATE_COPY = listOf("discover.hiddenSongs", "discover.hiddenArtists", "profile.thresholds")
 

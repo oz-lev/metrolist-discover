@@ -89,6 +89,10 @@ fun main(args: Array<String>) {
     if ("--diag" in args) { poolDiag(h, engine); return }
     if ("--mixes" in args) { mixReport(h); return }
     if ("--personal" in args) { personalReport(h); return }
+    if ("--context" in args) { contextReport(h); return }
+    if ("--context-grid" in args) { contextGrid(h); return }
+    if ("--newmixes" in args) { newMixesReport(h); return }
+    if ("--grid3" in args) { reportGrid3(h); return }
     if ("--report" in args) { println("AVG   " + fmt(listReport(h, engine))); return }
     val holdout = arg("--holdout")?.toDouble() ?: 14.0
     if ("--grid" in args) {
