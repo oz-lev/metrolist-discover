@@ -527,7 +527,7 @@ fun ForgottenHomeCard(profileId: String) {
     val cs = MaterialTheme.colorScheme
     V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
         brush = Brush.linearGradient(listOf(cs.tertiary, cs.primary)),
-        onClick = { pc.playTracks(list.take(40).shuffled(), "💔 אהובים שנשכחו") }) {
+        onClick = { pc.playTracks(list.take(40).shuffled().map { it.track }, "💔 אהובים שנשכחו") }) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(16.dp)) {
             Column(Modifier.weight(1f)) {
                 Text("💔 אהובים שנשכחו", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
