@@ -118,6 +118,8 @@ data class Loyalty(val key: String, val name: String, val monthsActive: Int, val
 
 object StatsPlus {
     const val FORGOTTEN_DAYS = 60
+    /** the key FullStats gives a song with no artist at all; never named as "your top artist" */
+    const val UNKNOWN_ARTIST = "?"
     const val FORGOTTEN_MIN_PLAYS = 5
     fun f(n: Int): String = String.format(java.util.Locale.ROOT, "%,d", n)
 
@@ -207,7 +209,7 @@ object StatsPlus {
         val elapsed = maxOf(1, Math.floorDiv(endTs - startTs + DayClock.DAY_MS - 1, DayClock.DAY_MS).toInt())
         val newArtists = ix.firstArtist.count { (k, ts) -> ts in w && k in artistMs }
         val newSongs = ix.firstTrack.count { (k, ts) -> ts in w && k in titles }
-        val topA = artistMs.maxWithOrNull(compareBy<Map.Entry<String, Long>> { it.value }.thenByDescending { it.key })?.key
+        val topA = artistMs.filterKeys { it != UNKNOWN_ARTIST }.maxWithOrNull(compareBy<Map.Entry<String, Long>> { it.value }.thenByDescending { it.key })?.key
         val topS = songPlays.maxWithOrNull(compareBy<Map.Entry<String, Int>> { it.value }.thenByDescending { it.key })?.key
         return PeriodSide(label, w, total, plays, titles.size, artistMs.size, days.size, elapsed, total / elapsed, newArtists, newSongs,
             if (known > 0) fin.toDouble() / known else null, topA?.let { names[it] }, topS?.let { titles[it] })
@@ -295,7 +297,7 @@ object StatsPlus {
         // the first listen of the artists that are on top now (all time)
         val msByArtist = HashMap<String, Long>(); val names = HashMap<String, String>()
         for (r in rows) { msByArtist[r.artistKey] = (msByArtist[r.artistKey] ?: 0L) + r.ms; names.putIfAbsent(r.artistKey, r.artistName) }
-        msByArtist.entries.sortedWith(compareByDescending<Map.Entry<String, Long>> { it.value }.thenBy { it.key }).take(topArtists).forEachIndexed { i, (k, ms) ->
+        msByArtist.entries.filter { it.key != UNKNOWN_ARTIST }.sortedWith(compareByDescending<Map.Entry<String, Long>> { it.value }.thenBy { it.key }).take(topArtists).forEachIndexed { i, (k, ms) ->
             ix.firstArtist[k]?.let { reached += Milestone("firstTop$k", if (i == 0) "👑" else "🌟", "הפעם הראשונה ששמעת את ${names[k]}", "מקום ${i + 1} אצלך · ${FullStats.hm(ms)}", DayClock.date(it)) }
         }
         // longest streak, biggest day, longest session
@@ -360,11 +362,11 @@ object StatsPlus {
 
     // ------------------------------------------------------------------ recap
     fun recap(r: StatsReport, g: GenreReport?): Recap {
-        val a = r.artists.firstOrNull(); val s = r.songs.firstOrNull()
+        val a = r.artists.firstOrNull { it.key != UNKNOWN_ARTIST }; val s = r.songs.firstOrNull()
         return Recap(r.label, r.overview.totalMs, r.overview.plays, r.overview.songs, r.overview.artists,
             a?.name, a?.ms ?: 0L, a?.thumb, s?.track?.title, s?.track?.artistLabel, s?.plays ?: 0, s?.track?.thumbnailUrl,
             g?.topGenre?.he, true, g?.moods?.firstOrNull()?.he,
-            r.longestStreak, r.discovered.size, r.artists.take(5).map { it.name }, r.songs.take(5).map { it.track.title },
+            r.longestStreak, r.discovered.size, r.artists.filter { it.key != UNKNOWN_ARTIST }.take(5).map { it.name }, r.songs.take(5).map { it.track.title },
             r.overview.activeDays, r.overview.days)
     }
 
@@ -399,7 +401,7 @@ object StatsPlus {
             if (r.counted) months.getOrPut(r.artistKey) { HashSet() } += YearMonth.from(DayClock.date(r.end))
         }
         val end = YearMonth.from(DayClock.date(now))
-        return ms.entries.sortedWith(compareByDescending<Map.Entry<String, Long>> { it.value }.thenBy { it.key }).take(top).map { (k, v) ->
+        return ms.entries.filter { it.key != UNKNOWN_ARTIST }.sortedWith(compareByDescending<Map.Entry<String, Long>> { it.value }.thenBy { it.key }).take(top).map { (k, v) ->
             val first = ix.firstArtist[k]
             val span = first?.let { (java.time.temporal.ChronoUnit.MONTHS.between(YearMonth.from(DayClock.date(it)), end) + 1).toInt() } ?: 0
             Loyalty(k, names[k] ?: k, months[k]?.size ?: 0, span, v, first)

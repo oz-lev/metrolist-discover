@@ -212,6 +212,17 @@ class StatsPlus1313Test {
         assertEquals(listOf("Artist A", "Artist B"), rc.topArtists)
     }
 
+    @Test fun aSongWithNoArtistIsNeverTheTopArtist() {
+        val tr = tracks + ("x" to TrackMeta("x", "No artist", emptyList(), emptyList(), null, 200))
+        val i = ix(listOf(play("x", ts(2026, 11, 2, 10)), play("x", ts(2026, 11, 2, 11)), play("x", ts(2026, 11, 2, 12)), play("b1", ts(2026, 11, 3, 10))), tr)
+        val r = FullStats.report(i, StatsPeriod(StatsUnit.MONTH), now)
+        assertEquals("?", r.artists.first().key)                        // the plain list still shows it
+        assertEquals("Artist B", StatsPlus.recap(r, null).topArtist)
+        assertEquals("Artist B", StatsPlus.compare(i, ComparePreset.MONTH_VS_LAST, now).a.topArtist)
+        assertTrue(StatsPlus.loyalty(i, now).none { it.key == "?" })
+        assertTrue(StatsPlus.milestones(i, now).none { it.id == "firstTop?" })
+    }
+
     @Test fun newShareByMonthAndLoyalty() {
         val i = ix(
             play("a1", ts(2026, 9, 2, 10)), play("a1", ts(2026, 10, 2, 10)), play("b1", ts(2026, 10, 3, 10)),

@@ -406,6 +406,7 @@ fun LazyListScope.compareItems(preset: ComparePreset, cmp: Comparison?, pad: Dp,
             val max = maxOf(cmp.a.totalMs, cmp.b.totalMs).coerceAtLeast(1L)
             ShareBar(cmp.a.label, FullStats.hm(cmp.a.totalMs), cmp.a.totalMs.toDouble() / max)
             ShareBar(cmp.b.label, FullStats.hm(cmp.b.totalMs), cmp.b.totalMs.toDouble() / max, MaterialTheme.colorScheme.outline)
+            if (cmp.b.plays == 0) SpHint("ב${cmp.b.label} אין האזנות בפרופיל הזה, אז אין למה להשוות.")
         }
     }
     item(key = "sp_cmp_table") {
