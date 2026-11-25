@@ -34,7 +34,7 @@ jobs:
           ls -lh out/
           ok=0
           for attempt in 1 2 3 4 5 6; do
-            gh release upload "${{ inputs.tag }}" out/Metrolist.apk out/Metrolist-Discover.apk --clobber && { ok=1; break; }
+            gh release upload "${{ inputs.tag }}" out/Metrolist.apk --repo "${{ github.repository }}" --clobber && { ok=1; break; }
             echo "attempt ${attempt} failed; retrying in $((attempt * 10))s..."
             sleep $((attempt * 10))
           done
