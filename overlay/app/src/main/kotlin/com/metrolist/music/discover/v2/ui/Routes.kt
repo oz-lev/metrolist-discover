@@ -1,5 +1,5 @@
 /**
- * Metrolist Discover v2 (fork addition) - GPL-3.0
+ * Metrolist Discover 13.7.0.15 (fork addition) - GPL-3.0
  */
 package com.metrolist.music.discover.v2.ui
 
@@ -8,7 +8,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.composable
 
 /**
- * The v2 screens, added to Metrolist's NavHost by hook 4 (one line at the top of navigationBuilder()).
+ * The Discover screens, added to Metrolist's NavHost by hook 4 (one line at the top of navigationBuilder()).
  * Routes are prefixed "discover/" so they can never collide with upstream routes.
  */
 object V2Routes {
@@ -29,6 +29,9 @@ object V2Routes {
     const val STATS = "discover/stats"
     // 13.7.0.14
     const val MIXLAB = "discover/mixlab"
+    // 13.7.0.15
+    const val TASTE_CONTROLS = "discover/taste"
+    const val PLAYLIST_TOOLS = "discover/playlists"
 }
 
 fun discoverRoutes(builder: NavGraphBuilder, navController: NavHostController) {
@@ -46,4 +49,6 @@ fun discoverRoutes(builder: NavGraphBuilder, navController: NavHostController) {
     builder.composable(V2Routes.REPLAY) { com.metrolist.music.discover.v21.ui.ReplayScreen(onBack = { navController.navigateUp() }) }
     builder.composable(V2Routes.STATS) { com.metrolist.music.discover.v21.ui.StatsScreen(onBack = { navController.navigateUp() }) }
     builder.composable(V2Routes.MIXLAB) { com.metrolist.music.discover.v21.ui.MixLabScreen(onBack = { navController.navigateUp() }) }
+    builder.composable(V2Routes.TASTE_CONTROLS) { com.metrolist.music.discover.v21.ui.TasteControlsScreen(onBack = { navController.navigateUp() }) }
+    builder.composable(V2Routes.PLAYLIST_TOOLS) { com.metrolist.music.discover.v21.ui.PlaylistToolsScreen(onBack = { navController.navigateUp() }) }
 }

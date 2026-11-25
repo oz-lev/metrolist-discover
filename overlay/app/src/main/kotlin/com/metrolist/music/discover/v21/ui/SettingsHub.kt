@@ -206,6 +206,13 @@ fun SettingsHubScreen(onBack: () -> Unit, onNavigate: (String) -> Unit) {
         add(SItem(g2, "למידה בזמן אמת", "דילוג מוקדם מזיז את שאר המיקס מיד, האזנה מלאה מקדמת דומים") { Toggle("⚡ למידה בזמן אמת", "דילוג מוקדם = פחות מהאמן והווייב הזה עד סוף הסשן", s.liveLearning) { s.liveLearning = it } })
         add(SItem(g2, "סידור כמו דיג'יי", "האנרגיה עולה ויורדת בגלים חלקים, בלי אותו אמן ברצף") { Toggle("🎧 סידור כמו דיג'יי", "גלי אנרגיה חלקים במקום סדר דירוג", s.djOrder) { s.djOrder = it } })
         add(SItem(g2, "עוד שירים חדשים מהרשת", "רדיו ושירים קשורים מ-YouTube Music, לא רק מהספרייה שלך") { Toggle("🌐 עוד שירים חדשים מהרשת", "כבוי = רק מהספרייה וההיסטוריה (מהיר יותר)", s.onlineNew) { s.onlineNew = it; V2Engine.invalidate() } })
+        add(SItem(g2, "שליטה באלגוריתם ובטעם", "פאנל שליטה מורחב: למידת טעם, גילוי, דילוגים, גיוון וניהול אמנים") {
+            NavRow("🧠 שליטה באלגוריתם ובטעם", "סליידרים, אמנים מקודמים/מוחלשים וסיכום הלמידה") { onNavigate(V2Routes.TASTE_CONTROLS) }
+        })
+        add(SItem(g2, "ניהול ומיזוג פלייליסטים", "מיזוג 2+ פלייליסטים, ניקוי כפילויות, פיצול וחיתוך") {
+            NavRow("🔀 ניהול ומיזוג פלייליסטים", "מיזוג, כפילויות, סינון לפי שפה/אמן ושכפול") { onNavigate(V2Routes.PLAYLIST_TOOLS) }
+        })
+        add(SItem(g2, "למידת טעם מתקדמת", "לומד אחוז סיום, דילוגים, ריפלייז, מעברים בסשן ושעות יום") { Toggle("🧠 למידת טעם מתקדמת (v15)", "מנוע הלמידה החדש: השלמת שירים, ריפלייז, קשרי סשן ודילוגים", s.tasteModel) { s.tasteModel = it; V2Engine.invalidate() } })
         add(SItem(g2, "הקשר האזנה", "מה שאתה שומע עכשיו עולה, שעות היום, בלי לחזור על מה ששמעת בשעות האחרונות") { Toggle("🧠 הקשר האזנה", "כבוי = הדירוג של 13.7.0.13", s.mixContext) { s.mixContext = it; V2Engine.invalidate() } })
         add(SItem(g2, "מצב רוח לפי יום בשבוע", "למשל: שישי = מזרחית, ראשון = רגוע") {
             val m = s.weekdayMoods
@@ -255,11 +262,11 @@ fun SettingsHubScreen(onBack: () -> Unit, onNavigate: (String) -> Unit) {
         val g4 = GROUPS[4].second
         add(SItem(g4, "חסימות לפי ימים ושעות", "בלי שירי פרידה ביום שישי 😂") {
             val rules = s.blocks
-            if (rules.isEmpty()) Text("אין חסימות. דוגמה: בלי שירי פרידה ביום שישי 😂", color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
+            if (rules.isEmpty()) Text("אין חסימות. דוגמה: בלי שירי פרידה ביום שישי 😂", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
             rules.forEachIndexed { i, r ->
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Text(ruleLabel(r), color = Color.White, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    Text("✕", color = Color.White, fontSize = 18.sp, modifier = Modifier.clip(CircleShape).clickable { s.blocks = rules.filterIndexed { j, _ -> j != i } }.padding(8.dp))
+                    Text(ruleLabel(r), color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Text("✕", color = MaterialTheme.colorScheme.onSurface, fontSize = 18.sp, modifier = Modifier.clip(CircleShape).clickable { s.blocks = rules.filterIndexed { j, _ -> j != i } }.padding(8.dp))
                 }
             }
             Spacer(Modifier.height(6.dp))
@@ -310,7 +317,7 @@ fun SettingsHubScreen(onBack: () -> Unit, onNavigate: (String) -> Unit) {
             if (active != null) {
                 val left = ((s.tasteUntil - System.currentTimeMillis()) / 60_000L).coerceAtLeast(0)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("${active.emoji} פעיל: ${active.he} · עוד $left דק׳", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text("${active.emoji} פעיל: ${active.he} · עוד $left דק׳", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     Pill("עצור") { s.tastePreset = null; s.tasteUntil = 0L }
                 }
             }
@@ -318,7 +325,7 @@ fun SettingsHubScreen(onBack: () -> Unit, onNavigate: (String) -> Unit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     row.forEach { p ->
                         Box(contentAlignment = Alignment.Center, modifier = Modifier.weight(1f).clip(MaterialTheme.shapes.large)
-                            .background(Color.White.copy(alpha = if (active == p) 0.35f else 0.12f))
+                            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (active == p) 0.35f else 0.12f))
                             .clickable(enabled = busy == null) {
                                 s.tastePreset = p; s.tasteUntil = System.currentTimeMillis() + 3_600_000L
                                 busy = "מחליף טעם…"
@@ -327,7 +334,7 @@ fun SettingsHubScreen(onBack: () -> Unit, onNavigate: (String) -> Unit) {
                                     busy = null
                                     if (mix != null) player?.playMix(mix, ctx) else toast(ctx, "לא הצלחתי למצוא שירים, נסה שוב")
                                 }
-                            }.padding(vertical = 14.dp)) { Text("${p.emoji} ${p.he}", color = Color.White, fontWeight = FontWeight.Bold) }
+                            }.padding(vertical = 14.dp)) { Text("${p.emoji} ${p.he}", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                     }
                 }
             }
@@ -391,18 +398,19 @@ fun SettingsHubScreen(onBack: () -> Unit, onNavigate: (String) -> Unit) {
     busy?.let { BusyOverlay(it) }
 }
 
-// ====================================================================== building blocks (shared by the v2.1 screens)
+// ====================================================================== building blocks (unified Material 3, shared by v2.1 screens)
 
 @Composable
-internal fun Group(emoji: String, title: String, brush: Brush, content: @Composable () -> Unit) {
-    V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), brush = brush) {
+internal fun Group(emoji: String, title: String, @Suppress("UNUSED_PARAMETER") brush: Brush, content: @Composable () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(emoji, fontSize = 26.sp)
+                Text(emoji, fontSize = 22.sp)
                 Spacer(Modifier.width(8.dp))
-                Text(title, color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                Text(title, color = cs.onSurface, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
             content()
         }
     }
@@ -410,10 +418,11 @@ internal fun Group(emoji: String, title: String, brush: Brush, content: @Composa
 
 @Composable
 internal fun Toggle(title: String, sub: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    val cs = MaterialTheme.colorScheme
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 6.dp)) {
-        Column(Modifier.weight(1f)) {
-            Text(title, color = Color.White, fontWeight = FontWeight.SemiBold)
-            Text(sub, color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.bodySmall)
+        Column(Modifier.weight(1f).padding(end = 10.dp)) {
+            Text(title, color = cs.onSurface, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            Text(sub, color = cs.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         }
         Switch(checked = checked, onCheckedChange = onChange)
     }
@@ -421,25 +430,32 @@ internal fun Toggle(title: String, sub: String, checked: Boolean, onChange: (Boo
 
 @Composable
 internal fun NavRow(title: String, sub: String, onClick: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(vertical = 8.dp)) {
-        Column(Modifier.weight(1f)) {
-            Text(title, color = Color.White, fontWeight = FontWeight.Bold)
-            Text(sub, color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.bodySmall)
+    val cs = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(vertical = 8.dp)) {
+        Column(Modifier.weight(1f).padding(end = 10.dp)) {
+            Text(title, color = cs.onSurface, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            Text(sub, color = cs.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         }
-        Text("‹", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+        Text("‹", color = cs.primary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
 internal fun <T> Choice(title: String, options: List<Pair<T, String>>, selected: T, onPick: (T) -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(title, color = Color.White, fontWeight = FontWeight.SemiBold)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+    val cs = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Text(title, color = cs.onSurface, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
             items(options.size) { i ->
                 val (v, label) = options[i]
                 val on = v == selected
-                Box(Modifier.clip(RoundedCornerShape(50)).background(if (on) Color.White else Color.White.copy(alpha = 0.14f)).clickable { onPick(v) }.padding(horizontal = 14.dp, vertical = 8.dp)) {
-                    Text(label, color = if (on) Color(0xFF111111) else Color.White, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge)
+                Box(
+                    Modifier.clip(RoundedCornerShape(12.dp))
+                        .background(if (on) cs.primaryContainer else cs.surfaceContainerHigh)
+                        .clickable { onPick(v) }
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                ) {
+                    Text(label, color = if (on) cs.onPrimaryContainer else cs.onSurface, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
@@ -450,16 +466,17 @@ internal fun <T> Choice(title: String, options: List<Pair<T, String>>, selected:
 @Composable
 internal fun SettingSlider(title: String, value: Float, range: ClosedFloatingPointRange<Float>, steps: Int, label: (Float) -> String,
                            startLabel: String, endLabel: String, onCommit: (Float) -> Unit) {
+    val cs = MaterialTheme.colorScheme
     var v by remember(value) { mutableFloatStateOf(value.coerceIn(range.start, range.endInclusive)) }
-    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Row(Modifier.fillMaxWidth()) {
-            Text(title, color = Color.White, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text(label(v), color = Color.White, fontWeight = FontWeight.Bold)
+            Text(title, color = cs.onSurface, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text(label(v), color = cs.primary, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
         }
         Slider(value = v, onValueChange = { v = it }, valueRange = range, steps = steps, onValueChangeFinished = { onCommit(v) })
         Row(Modifier.fillMaxWidth()) {
-            Text(startLabel, color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
-            Text(endLabel, color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+            Text(startLabel, color = cs.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+            Text(endLabel, color = cs.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
         }
     }
 }

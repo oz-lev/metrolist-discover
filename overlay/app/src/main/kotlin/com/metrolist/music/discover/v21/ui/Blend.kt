@@ -94,7 +94,7 @@ fun BlendScreen(onBack: () -> Unit) {
                             if (!ok) toast(ctx, "לא הצלחתי לייצא 😕")
                         }
                     }
-                    Text("בקובץ יש רק האמנים והשירים הכי שמועים שלך. לא היסטוריה, לא שעות.", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
+                    Text("בקובץ יש רק האמנים והשירים הכי שמועים שלך. לא היסטוריה, לא שעות.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
                 }
             }
         }
@@ -104,9 +104,9 @@ fun BlendScreen(onBack: () -> Unit) {
                     GradientButton("📂 בחר קובץ של חבר", Modifier.fillMaxWidth()) { runCatching { picker.launch(arrayOf("*/*")) } }
                     friend?.let { f ->
                         Column(Modifier.padding(top = 10.dp)) {
-                            Text("🎧 ${f.name}: ${f.artists.size} אמנים, ${f.tracks.size} שירים", color = Color.White, fontWeight = FontWeight.Bold)
-                            match?.let { Text("התאמה ביניכם: $it%", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black) }
-                            Text("אמנים שלו: " + f.artists.take(6).joinToString(", ") { it.first }, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
+                            Text("🎧 ${f.name}: ${f.artists.size} אמנים, ${f.tracks.size} שירים", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                            match?.let { Text("התאמה ביניכם: $it%", color = MaterialTheme.colorScheme.onSurface, fontSize = 28.sp, fontWeight = FontWeight.Black) }
+                            Text("אמנים שלו: " + f.artists.take(6).joinToString(", ") { it.first }, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                             GradientButton("▶ נגן את ה-Blend", Modifier.fillMaxWidth().padding(top = 10.dp)) {
                                 busy = "מערבב את שניכם…"
                                 scope.launch {

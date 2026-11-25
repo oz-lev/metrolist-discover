@@ -57,6 +57,10 @@ import com.metrolist.music.discover.engine.MixLab
 import com.metrolist.music.discover.engine.MixRecipe
 import com.metrolist.music.discover.engine.MoreMixes
 import com.metrolist.music.discover.engine.WhyIndex
+import com.metrolist.music.discover.engine.LearnedTaste
+import com.metrolist.music.discover.engine.SavedMixRecipe
+import com.metrolist.music.discover.engine.TasteConfig
+import com.metrolist.music.discover.engine.TasteModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -106,9 +110,23 @@ object V2Engine {
     const val MORE_SIZE = 20
     private var feedbackCount = 0
 
+    init {
+        com.metrolist.music.discover.space.ProfileSpace.onBeforeSwitch { clearAllCaches() }
+    }
+
+    /** Clears all in-memory caches (called before a profile switch kills the process). */
+    fun clearAllCaches() {
+        snaps.clear(); ests.clear(); personalCaches.clear(); whys.clear(); givenWhy.clear()
+        synchronized(onlineCache) { onlineCache.clear() }
+        synchronized(relatedCache) { relatedCache.clear() }
+        synchronized(lives) { lives.clear() }
+        playing = null; activeMix = null
+    }
+
     /** [foreign]: songs that only ever happened in other profiles; online sources never add them to this profile's mixes. */
     data class Snapshot(val history: History, val profile: TasteProfile, val pool: List<PoolTrack>, val byId: Map<String, PoolTrack>, val builtAt: Long,
-                        val owner: String = ProfileScope.DEFAULT, val foreign: Set<String> = emptySet(), val feedback: Feedback = Feedback())
+                        val owner: String = ProfileScope.DEFAULT, val foreign: Set<String> = emptySet(), val feedback: Feedback = Feedback(),
+                        val learned: LearnedTaste? = null, val boostedArtists: Set<String> = emptySet())
 
     fun estimator(ctx: Context): VibeEstimator = est ?: synchronized(this) {
         est ?: VibeEstimator(corrections = VibeCorrections.decode(V2Settings.get(ctx).corrections)).also { est = it }
@@ -151,13 +169,17 @@ object V2Engine {
         for (t in history.tracks.values) add(t, null)
         val known = history.tracks.keys
         for (item in repo.cached()) if (item.track.id !in known && item.track.id !in iso.foreign) add(item.track, 0.0)
-        // 13.7.0.14: listening context (momentum, time of day, cooldown, fading old taste) + this profile's "not for me" feedback
+        // 13.7.0.14 listening context + 13.7.0.15 TasteModel learner + user controls
         val fb = runCatching { repo.feedback() }.getOrDefault(Feedback())
-        val cfg = if (s.mixContext) ContextConfig() else ContextConfig.OFF.copy(lessArtistWeight = ContextConfig().lessArtistWeight)
-        val ctxPool = runCatching { MixContext.apply(pool, MixContext.boosts(history, nowTs, cfg, fb), fb, cfg) }.getOrDefault(pool)
+        val boosted = runCatching { repo.boostedArtists() }.getOrDefault(emptySet())
+        val cfg = if (s.mixContext) ContextConfig(momentumWeight = 0.50 * s.recencyWeight) else ContextConfig.OFF.copy(lessArtistWeight = ContextConfig().lessArtistWeight)
+        var ctxPool = runCatching { MixContext.apply(pool, MixContext.boosts(history, nowTs, cfg, fb), fb, cfg) }.getOrDefault(pool)
+        val tCfg = s.tasteConfig()
+        val learned = runCatching { TasteModel.learn(history, nowTs, tCfg, fb, boosted) }.getOrNull()
+        if (learned != null) ctxPool = runCatching { TasteModel.apply(ctxPool, learned, fb) }.getOrDefault(ctxPool)
         val byId = ctxPool.associateBy { it.track.id }
         // stored under the profile it was built for, even if the user switched while it was building
-        Snapshot(history, profile, ctxPool, byId, System.currentTimeMillis(), owner, iso.foreign, fb).also { snaps[owner] = it; whys.remove(owner) }
+        Snapshot(history, profile, ctxPool, byId, System.currentTimeMillis(), owner, iso.foreign, fb, learned, boosted).also { snaps[owner] = it; whys.remove(owner) }
     }
 
     fun invalidate() { snap = null }
@@ -166,9 +188,10 @@ object V2Engine {
         s?.byId?.get(t.id)?.let { return it }
         val e = estimator(ctx)
         val aff = s?.profile?.artistAffinity(t.mainArtist)?.let { (it + 1) / 2 } ?: 0.4
-        // 13.7.0.14: "less like this" reaches online songs through their artist
+        // 13.7.0.14/15: "less like this" + learned artist affinity + boosted artists reach online songs too
         val less = s?.feedback?.lessArtists?.get(t.mainArtist)?.let { -ContextConfig().lessArtistWeight * it } ?: 0.0
-        return PoolTrack(t, e.own(t), 0.0, aff.coerceIn(0.0, 1.0), less)
+        val artistDelta = s?.learned?.artistBoosts?.get(t.mainArtist) ?: 0.0
+        return PoolTrack(t, e.own(t), 0.0, aff.coerceIn(0.0, 1.0), less + artistDelta)
     }
 
     /** Online songs never bring back what this profile blocked. */
@@ -270,6 +293,14 @@ object V2Engine {
             var i = 4
             while (i < m.size && w < wild.size) { m.add(i, wild[w++]); i += 5 }
             out = ruleEngine(ctx, s).filter(m, now())
+        }
+        if (set.maxPerArtist > 0 && !keepOrder) {
+            val counts = HashMap<String, Int>()
+            out = out.filter { pt ->
+                val a = pt.track.mainArtist
+                val c = counts[a] ?: 0
+                if (c < set.maxPerArtist) { counts[a] = c + 1; true } else false
+            }
         }
         out = shape(ctx, s, out, keepOrder)
         val tracks = out.map { it.track }
@@ -465,6 +496,76 @@ object V2Engine {
         }
     }
 
+    /** 13.7.0.15: all library & listened artists for searchable multi-artist picker (id, name, playCount). */
+    data class ArtistPick(val id: String, val name: String, val plays: Int)
+
+    suspend fun allArtists(ctx: Context, db: MusicDatabase, limit: Int = 500): List<ArtistPick> = withContext(Dispatchers.Default) {
+        val s = snapshot(ctx, db)
+        val counts = HashMap<String, Int>()
+        for (e in s.history.plays) {
+            if (e.playedMs >= 30_000L) s.history.tracks[e.trackId]?.mainArtist?.let { if (it != "?") counts[it] = (counts[it] ?: 0) + 1 }
+        }
+        val names = HashMap<String, String>()
+        for (t in s.history.tracks.values) {
+            val a = t.mainArtist
+            if (a == "?" || a in s.feedback.hiddenArtists) continue
+            if (a !in names) {
+                val nm = t.artistNames.firstOrNull()?.takeIf { it.isNotBlank() } ?: t.artistLabel
+                if (nm.isNotBlank() && nm != "?") names[a] = nm
+            }
+        }
+        names.entries
+            .map { (id, nm) -> ArtistPick(id, nm, counts[id] ?: 0) }
+            .sortedWith(compareByDescending<ArtistPick> { it.plays }.thenBy { it.name.lowercase() })
+            .take(limit)
+    }
+
+    /** 13.7.0.15: learned taste summary + human-readable names for the Taste Controls panel. */
+    data class TasteSummary(
+        val learned: LearnedTaste?,
+        val topArtistNames: List<String>,
+        val boosted: List<Pair<String, String>>,
+        val less: List<Triple<String, String, Int>>,
+        val hiddenArtists: List<Pair<String, String>>,
+        val hiddenSongs: List<Pair<String, String>>,
+    )
+
+    suspend fun tasteSummary(ctx: Context, db: MusicDatabase): TasteSummary = withContext(Dispatchers.Default) {
+        val s = snapshot(ctx, db)
+        val aNames = HashMap<String, String>()
+        for (t in s.history.tracks.values) {
+            val a = t.mainArtist
+            if (a != "?" && a !in aNames) aNames[a] = t.artistNames.firstOrNull()?.takeIf { it.isNotBlank() } ?: t.artistLabel
+        }
+        fun aLabel(id: String) = aNames[id] ?: id.removePrefix("name:")
+        val topNames = s.learned?.topArtists.orEmpty().take(5).map { aLabel(it.first) }
+        val boosted = s.boostedArtists.map { it to aLabel(it) }.sortedBy { it.second.lowercase() }
+        val less = s.feedback.lessArtists.entries.map { Triple(it.key, aLabel(it.key), it.value) }.sortedBy { it.second.lowercase() }
+        val hArt = s.feedback.hiddenArtists.map { it to aLabel(it) }.sortedBy { it.second.lowercase() }
+        val hSong = s.feedback.hiddenSongs.map { id -> id to (s.history.tracks[id]?.title ?: id) }.sortedBy { it.second.lowercase() }
+        TasteSummary(s.learned, topNames, boosted, less, hArt, hSong)
+    }
+
+    fun savedMixes(ctx: Context): List<SavedMixRecipe> = MixLab.decodeSaved(V2Settings.get(ctx).savedMixesRaw)
+
+    fun saveMixRecipe(ctx: Context, name: String, recipe: MixRecipe, existingId: String? = null): SavedMixRecipe {
+        val set = V2Settings.get(ctx)
+        val cur = MixLab.decodeSaved(set.savedMixesRaw).toMutableList()
+        val id = existingId ?: ("mx_" + System.currentTimeMillis().toString(36))
+        val cleanName = name.trim().take(48).ifBlank { "מיקס שמור" }
+        val item = SavedMixRecipe(id, cleanName, recipe, System.currentTimeMillis())
+        val idx = cur.indexOfFirst { it.id == id }
+        if (idx >= 0) cur[idx] = item else cur += item
+        set.savedMixesRaw = MixLab.encodeSaved(cur)
+        return item
+    }
+
+    fun deleteSavedMix(ctx: Context, id: String) {
+        val set = V2Settings.get(ctx)
+        val cur = MixLab.decodeSaved(set.savedMixesRaw).filterNot { it.id == id }
+        set.savedMixesRaw = MixLab.encodeSaved(cur)
+    }
+
     /** 🧪 The mix builder. Online: radio of the seeds and the mood's searches, when new songs are wanted. */
     suspend fun lab(ctx: Context, db: MusicDatabase, r: MixRecipe): BuiltMix = withContext(Dispatchers.Default) {
         val s = snapshot(ctx, db)
@@ -475,7 +576,7 @@ object V2Engine {
         val pool = if (online) dailyOnline(ctx, s, r.mood, seeds) else s.pool
         // songs YouTube Music relates to a seed count as linked to it
         val linked = HashMap<String, String>()
-        if (online) for (sd in seeds.take(MixLab.MAX_SEEDS * 2)) {
+        if (online) for (sd in seeds.take(6)) {
             val label = sd.artistNames.firstOrNull()?.takeIf { it.isNotBlank() } ?: sd.title
             for (x in runCatching { related(sd.id) }.getOrDefault(emptyList())) linked.putIfAbsent(x.id, "דומה ל$label שבחרת")
         }

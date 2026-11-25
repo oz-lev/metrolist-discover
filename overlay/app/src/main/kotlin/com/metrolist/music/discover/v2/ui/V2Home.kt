@@ -72,7 +72,9 @@ private object HomeCache {
     // 13.7.0.10: one entry per profile, so switching shows that profile's own mixes at once and never the previous one's
     class Entry { var daily: BuiltMix? = null; var builtAt = 0L; var match: Map<String, Int> = emptyMap(); var personal: List<BuiltMix> = emptyList() }
     private val byProfile = HashMap<String, Entry>()
+    init { com.metrolist.music.discover.space.ProfileSpace.onBeforeSwitch { clear() } }
     fun of(id: String): Entry = synchronized(byProfile) { byProfile.getOrPut(id) { Entry() } }
+    fun clear() = synchronized(byProfile) { byProfile.clear() }
 }
 
 @Composable
@@ -153,8 +155,8 @@ fun V2HomeSection() {
                 val left = ((settings.tasteUntil - System.currentTimeMillis()) / 60_000L).coerceAtLeast(0)
                 V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), brush = themeCool()) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                        Text("${t.emoji} מצב טעם: ${t.he} · עוד $left דק׳", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        Text("עצור", color = Color.White, fontWeight = FontWeight.ExtraBold,
+                        Text("${t.emoji} מצב טעם: ${t.he} · עוד $left דק׳", color = MaterialTheme.colorScheme.onSecondaryContainer, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Text("עצור", color = MaterialTheme.colorScheme.onSecondaryContainer, fontWeight = FontWeight.ExtraBold,
                             modifier = Modifier.clip(RoundedCornerShape(50)).clickable { settings.tastePreset = null; settings.tasteUntil = 0L }.padding(8.dp))
                     }
                 }
@@ -163,25 +165,17 @@ fun V2HomeSection() {
             // hero: the daily mix
             HeroCard(daily, onPlay = { daily?.let { player.playMix(it, ctx) } ?: run("בונה את המיקס היומי…") { V2Engine.daily(ctx, db) } })
 
-            // hub tiles
+            // 13.7.0.15: active playlist quick-add bar right on Home
+            com.metrolist.music.discover.v21.ui.ActivePlaylistBar(onOpenTools = { nav.navigate(V2Routes.PLAYLIST_TOOLS) })
+
+            // unified M3 hub tiles
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
-                Tile("🎛️", "מרכז המיקסים", "חוגה וסליידרים", Modifier.weight(1f), Brush.linearGradient(listOf(Color(0xFF4C1D95), Color(0xFF7C3AED)))) { nav.navigate(V2Routes.MIXES) }
-                Tile("🔎", "חיפושים מוזרים", "כמו X אבל…", Modifier.weight(1f), Brush.linearGradient(listOf(Color(0xFF0C4A6E), Color(0xFF0891B2)))) { nav.navigate(V2Routes.SEARCH) }
+                Tile("🧪", "בונה מיקסים", "עד 25 אמנים + שמירה", Modifier.weight(1f)) { nav.navigate(V2Routes.MIXLAB) }
+                Tile("🧠", "שליטה בטעם", "סליידרים, דילוגים, אמנים", Modifier.weight(1f)) { nav.navigate(V2Routes.TASTE_CONTROLS) }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-                Tile("🎲", "רולטה", "שיר אקראי לגמרי", Modifier.weight(1f), Brush.linearGradient(listOf(Color(0xFF064E3B), Color(0xFF10B981)))) {
-                    if (busy == null) {
-                        busy = "מגריל…"
-                        scope.launch {
-                            val (seed, t) = runCatching { V2Engine.roulette(ctx) }.getOrDefault("" to null)
-                            busy = null
-                            if (t == null) toast(ctx, "הרולטה נתקעה, נסה שוב 🎲") else { player.playTracks(listOf(t), "🎲 רולטה"); toast(ctx, "🎲 \"$seed\" ← ${t.title}") }
-                        }
-                    }
-                }
-                Tile("🔄", "רגש להיפך", "מעצוב למסיבה", Modifier.weight(1f), Brush.linearGradient(listOf(Color(0xFF1E3A8A), Color(0xFFDB2777)))) {
-                    run("הופך רגשות…") { V2Engine.moodFlip(ctx, db) }
-                }
+                Tile("🎛️", "מרכז המיקסים", "חוגה, נסיעה, רולטה", Modifier.weight(1f)) { nav.navigate(V2Routes.MIXES) }
+                Tile("🔀", "מיזוג פלייליסטים", "מיזוג, כפילויות, פיצול", Modifier.weight(1f)) { nav.navigate(V2Routes.PLAYLIST_TOOLS) }
             }
 
             // v2.1: ask music, daily challenge, toolbox, widget actions
@@ -250,24 +244,24 @@ private fun HeroCard(mix: BuiltMix?, onPlay: () -> Unit) {
     val shift by glow.animateFloat(0f, 1f, infiniteRepeatable(tween(6000), RepeatMode.Reverse), label = "shift")
     val cs = MaterialTheme.colorScheme
     val brush = Brush.linearGradient(
-        listOf(cs.primary, cs.secondary, cs.tertiary),
-        start = androidx.compose.ui.geometry.Offset(0f + 400f * shift, 0f), end = androidx.compose.ui.geometry.Offset(900f, 700f - 300f * shift),
+        listOf(cs.primaryContainer, cs.secondaryContainer),
+        start = androidx.compose.ui.geometry.Offset(0f + 220f * shift, 0f), end = androidx.compose.ui.geometry.Offset(760f, 520f - 180f * shift),
     )
     V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), brush = brush, onClick = onPlay) {
         val compact = isCompactScreen()
         val cover = if (compact) 46.dp else 58.dp
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(if (compact) 14.dp else 18.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(if (compact) 14.dp else 16.dp)) {
             Column(Modifier.weight(1f)) {
-                Text("✨ נבנה במיוחד בשבילך", color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.labelMedium)
-                Text(mix?.title ?: "המיקס היומי שלך", color = Color.White, fontSize = if (compact) 20.sp else 24.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text("נבנה במיוחד בשבילך", color = cs.onPrimaryContainer.copy(alpha = 0.8f), style = MaterialTheme.typography.labelMedium)
+                Text(mix?.title ?: "המיקס היומי שלך", color = cs.onPrimaryContainer, style = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 val sub = mix?.let { m ->
                     val min = m.tracks.sumOf { t -> t.durationSec.coerceAtLeast(0) } / 60
                     "${m.tracks.size} שירים · $min דק׳ · " + m.tracks.take(3).joinToString(", ") { it.artistLabel.substringBefore(",") }
                 } ?: "מכין לך משהו טוב…"
-                Text(sub, color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(sub, color = cs.onPrimaryContainer.copy(alpha = 0.88f), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(12.dp))
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(54.dp).clip(CircleShape).background(Color.White)) {
-                    Text("▶", color = cs.primary, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp).clip(CircleShape).background(cs.primary)) {
+                    Text("▶", color = cs.onPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 }
             }
             Spacer(Modifier.width(12.dp))
@@ -288,12 +282,19 @@ private fun HeroCard(mix: BuiltMix?, onPlay: () -> Unit) {
 }
 
 @Composable
-private fun Tile(emoji: String, title: String, sub: String, modifier: Modifier, brush: Brush, onClick: () -> Unit) {
-    V2Card(modifier, brush = brush, onClick = onClick) {
-        Column(Modifier.padding(14.dp)) {
-            Text(emoji, fontSize = 26.sp)
-            Text(title, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall)
-            Text(sub, color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelSmall)
+private fun Tile(emoji: String, title: String, sub: String, modifier: Modifier, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    V2Card(modifier, onClick = onClick) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(12.dp)) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(cs.primaryContainer),
+            ) { Text(emoji, fontSize = 20.sp) }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, color = cs.onSurface, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(sub, color = cs.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }
@@ -301,20 +302,25 @@ private fun Tile(emoji: String, title: String, sub: String, modifier: Modifier, 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
 private fun DiscoverTile(item: DiscoverItem, match: Int?, onLongClick: () -> Unit, onClick: () -> Unit) {
-    val tileW = if (isCompactScreen()) 132.dp else 148.dp
-    Column(Modifier.width(tileW).clip(RoundedCornerShape(18.dp)).combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
+    val tileW = if (isCompactScreen()) 136.dp else 152.dp
+    Column(Modifier.width(tileW).clip(RoundedCornerShape(16.dp)).combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
         Box {
-            Art(item.track.thumbnailUrl, item.track.id, Modifier.fillMaxWidth().aspectRatio(1f), 18)
+            Art(item.track.thumbnailUrl, item.track.id, Modifier.fillMaxWidth().aspectRatio(1f), 16)
             if (match != null) {
-                Text("$match% התאמה", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(8.dp).clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 8.dp, vertical = 3.dp))
+                Text("$match%", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.align(Alignment.TopStart).padding(6.dp).clip(RoundedCornerShape(10.dp)).background(Color.Black.copy(alpha = 0.6f)).padding(horizontal = 7.dp, vertical = 3.dp))
             }
+            com.metrolist.music.discover.v21.ui.QuickAddSongIcon(
+                track = item.track,
+                compact = true,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp),
+            )
         }
         Text(item.track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp, start = 2.dp, end = 2.dp))
         Text(item.track.artistLabel, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 2.dp))
         Text(reasonText(item), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall,
-            color = V2Colors.pink, modifier = Modifier.padding(horizontal = 2.dp))
+            color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 2.dp))
     }
 }
 

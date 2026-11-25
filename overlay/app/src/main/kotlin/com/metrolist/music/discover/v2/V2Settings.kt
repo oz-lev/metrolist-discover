@@ -116,8 +116,8 @@ class V2Settings private constructor(private val store: DiscoverStore) {
     // 13.7.0.9: the main mix
     /** 0 = endless (the queue grows by itself near its end), else 50 or 100 songs */
     var mixLength: Int get() = i("v21.mixLen", 0); set(v) = save("v21.mixLen", if (v == 50 || v == 100) v else 0)
-    /** share of never-heard songs in the main mix, 0..0.6 (0.3 = 70% familiar / 30% new) */
-    var mixNewShare: Double get() = d("v21.mixNew", 0.3); set(v) = save("v21.mixNew", v.coerceIn(0.0, 0.6))
+    /** share of never-heard songs in the main mix, 0..1.0 (0.3 = 70% familiar / 30% new) */
+    var mixNewShare: Double get() = d("v21.mixNew", 0.3); set(v) = save("v21.mixNew", v.coerceIn(0.0, 1.0))
     /** an early skip / a full listen re-ranks the rest of the playing mix right away */
     var liveLearning: Boolean get() = b("v21.liveLearn", true); set(v) = save("v21.liveLearn", v)
     /** order the main mix as DJ energy waves instead of raw rank */
@@ -126,6 +126,27 @@ class V2Settings private constructor(private val store: DiscoverStore) {
     var onlineNew: Boolean get() = b("v21.onlineNew", true); set(v) = save("v21.onlineNew", v)
     /** 13.7.0.14: listening context in every vibe mix (what you are into now, time of day, no repeats of the last hours) */
     var mixContext: Boolean get() = b("v21.context", true); set(v) = save("v21.context", v)
+    // 13.7.0.15: TasteModel learner + wider algorithm controls + saved custom mixes + active quick-add playlist (all per profile)
+    var tasteModel: Boolean get() = b("v21.tasteModel", true); set(v) = save("v21.tasteModel", v)
+    /** 0..2.0 multiplier on recency/momentum & co-listening strength (default 1.0) */
+    var recencyWeight: Double get() = d("v21.recencyWeight", 1.0); set(v) = save("v21.recencyWeight", v.coerceIn(0.0, 2.0))
+    /** 0..2.0 multiplier on skip-avoidance strictness & less-artist pushdown (default 1.0) */
+    var skipStrictness: Double get() = d("v21.skipStrictness", 1.0); set(v) = save("v21.skipStrictness", v.coerceIn(0.0, 2.0))
+    /** 0 = automatic, else max songs per artist in generated mixes (1..6) */
+    var maxPerArtist: Int get() = i("v21.maxPerArtist", 0); set(v) = save("v21.maxPerArtist", v.coerceIn(0, 6))
+    /** Serialised SavedMixRecipe list for this profile */
+    var savedMixesRaw: String? get() = store.get("v21.savedMixes"); set(v) = save("v21.savedMixes", v)
+    /** Active / last-used playlist for 1-tap Quick Add on Home screen (per profile) */
+    var activePlaylistId: String? get() = store.get("v21.activePlaylistId")?.ifBlank { null }; set(v) = save("v21.activePlaylistId", v)
+    var activePlaylistName: String? get() = store.get("v21.activePlaylistName")?.ifBlank { null }; set(v) = save("v21.activePlaylistName", v)
+
+    fun tasteConfig(): com.metrolist.music.discover.engine.TasteConfig =
+        if (!tasteModel) com.metrolist.music.discover.engine.TasteConfig.OFF
+        else com.metrolist.music.discover.engine.TasteConfig(
+            enabled = true,
+            recencyStrength = recencyWeight,
+            skipStrictness = skipStrictness,
+        )
     /** offline nightly batch size: follows the mix length (endless -> 100) */
     val offlineSize: Int get() = if (mixLength == 50) 50 else 100
     // global (all profiles): the auto-switch schedule
@@ -166,7 +187,7 @@ class V2Settings private constructor(private val store: DiscoverStore) {
             "v21.seedLock", "v21.seed", "v21.weekday", "v21.defaultMood", "v21.daylist", "v21.ramp", "v21.favEvery", "v21.neverHeard",
             "v21.maxLen", "v21.artistGap", "v21.lang", "v21.explicit", "v21.autoEq", "v21.autoEqK", "v21.flow", "v21.sleepFade",
             "v21.smartEvery", "v21.secret", "v21.autoLike", "v21.autoLikeN", "v21.djIntros", "v21.bubbleFreq", "v21.challenge", "v21.goal", "v21.jumpBack",
-            "v21.mixLen", "v21.mixNew", "v21.liveLearn", "v21.djOrder", "v21.onlineNew", "v21.context").forEach { store.put(it, null) }
+            "v21.mixLen", "v21.mixNew", "v21.liveLearn", "v21.djOrder", "v21.onlineNew", "v21.context", "v21.tasteModel", "v21.recencyWeight", "v21.skipStrictness", "v21.maxPerArtist").forEach { store.put(it, null) }
         _version.value = _version.value + 1
     }
 

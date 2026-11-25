@@ -55,21 +55,21 @@ fun GoalFlameCard(g: DailyGoal.State, modifier: Modifier = Modifier, onClick: ((
     val flame = if (g.done) listOf(Color(0xFFF97316), Color(0xFFFACC15)) else listOf(Color(0xFF475569), Color(0xFF64748B))
     val pulse = rememberInfiniteTransition(label = "flame")
     val sc by pulse.animateFloat(1f, if (g.done) 1.12f else 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "sc")
-    V2Card(modifier, brush = Brush.linearGradient(listOf(Color(0xFF1C1917), Color(0xFF431407))), onClick = onClick) {
+    V2Card(modifier, onClick = onClick) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(14.dp)) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.size(64.dp)) {
                 Canvas(Modifier.fillMaxSize()) {
                     val st = 7.dp.toPx()
-                    drawArc(Color.White.copy(alpha = 0.12f), 0f, 360f, false, topLeft = Offset(st / 2, st / 2), size = Size(size.width - st, size.height - st), style = Stroke(st))
+                    drawArc(Color.Gray.copy(alpha = 0.22f), 0f, 360f, false, topLeft = Offset(st / 2, st / 2), size = Size(size.width - st, size.height - st), style = Stroke(st))
                     drawArc(Brush.sweepGradient(flame), -90f, 360f * g.progress, false, topLeft = Offset(st / 2, st / 2), size = Size(size.width - st, size.height - st), style = Stroke(st, cap = StrokeCap.Round))
                 }
                 Text("🔥", fontSize = 26.sp, modifier = Modifier.scale(sc))
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(if (g.done) "היעד היומי הושלם! 🎉" else "יעד יומי: ${g.minutesToday}/${g.goal} דק׳", color = Color.White, fontWeight = FontWeight.ExtraBold)
+                Text(if (g.done) "היעד היומי הושלם! 🎉" else "יעד יומי: ${g.minutesToday}/${g.goal} דק׳", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                 Text(if (g.streak > 0) "🔥 ${g.streak} ימים ברצף" + if (!g.done) " · עוד ${(g.goal - g.minutesToday).coerceAtLeast(0)} דק׳ לשמור עליו" else "" else "תשמע ${g.goal} דק׳ היום כדי להדליק את הלהבה",
-                    color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -83,8 +83,11 @@ fun JumpBackShelf(tracks: List<TrackMeta>, onPlay: (Int) -> Unit) {
     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         items(tracks.size) { i ->
             val t = tracks[i]
-            Column(Modifier.width(112.dp).clip(MaterialTheme.shapes.large).clickable { onPlay(i) }) {
-                Art(t.thumbnailUrl, t.id, Modifier.size(112.dp), 16)
+            Column(Modifier.width(116.dp).clip(MaterialTheme.shapes.medium).clickable { onPlay(i) }) {
+                Box {
+                    Art(t.thumbnailUrl, t.id, Modifier.size(116.dp), 14)
+                    QuickAddSongIcon(track = t, compact = true, modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp))
+                }
                 Text(t.title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
                 Text(t.artistLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }

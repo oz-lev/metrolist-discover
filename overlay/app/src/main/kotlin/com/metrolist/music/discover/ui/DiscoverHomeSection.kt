@@ -239,10 +239,17 @@ internal fun reasonText(item: DiscoverItem): String = when (item.reason) {
 @Composable
 private fun DiscoverCard(item: DiscoverItem, onLongClick: () -> Unit, onClick: () -> Unit) {
     Column(Modifier.width(144.dp).clip(RoundedCornerShape(16.dp)).combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(4.dp)) {
-        AsyncImage(
-            model = bigThumb(item.track.thumbnailUrl), contentDescription = null, contentScale = ContentScale.Crop,
-            modifier = Modifier.size(136.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest),
-        )
+        Box {
+            AsyncImage(
+                model = bigThumb(item.track.thumbnailUrl), contentDescription = null, contentScale = ContentScale.Crop,
+                modifier = Modifier.size(136.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            )
+            com.metrolist.music.discover.v21.ui.QuickAddSongIcon(
+                track = item.track,
+                compact = true,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp),
+            )
+        }
         Text(item.track.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
         Text(item.track.artistLabel, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
             color = MaterialTheme.colorScheme.onSurfaceVariant)

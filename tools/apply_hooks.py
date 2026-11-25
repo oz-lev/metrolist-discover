@@ -147,6 +147,32 @@ def space_app(src):
 space_activity = _attach(r"\nclass MainActivity\s*:\s*FragmentActivity\(\)\s*\{[ \t]*\n", "com.metrolist.music.discover.space.ProfileSpace.wrap", "space-activity")
 space_service = _attach(r"\nclass MusicService\s*:\s*MediaLibraryService\(\)[^{]*\{[ \t]*\n", "com.metrolist.music.discover.space.ProfileSpace.wrap", "space-service")
 
+
+# Hook 13 (13.7.0.15) - HomeScreen QuickPicks & ForgottenFavorites: 1-tap Quick-Add to Current/Other Playlist right beside the menu button.
+def home_quick_add(src):
+    pat = re.compile(r"(SongListItem\(\s*\n\s*song = song!!,[\s\S]{0,700}?trailingContent = \{\s*\n)([ \t]*)(IconButton\()", re.M)
+    matches = list(pat.finditer(src))
+    if not matches: return None
+    out = src
+    for m in reversed(matches):
+        indent = m.group(2)
+        ins = f"{indent}com.metrolist.music.discover.v21.ui.UpstreamHomeQuickAddButton(song!!) // {MARK} home-quick-add\n"
+        out = out[:m.start(2)] + ins + out[m.start(2):]
+    return out
+
+# Hook 14 (13.7.0.15) - LibraryPlaylistsScreen: M3 banner linking to Playlist Merge & Power Tools (both list and grid views).
+def playlists_tools(src):
+    pat = re.compile(r"^([ \t]*)headerContent\(\)[ \t]*$", re.M)
+    matches = list(pat.finditer(src))
+    if not matches: return None
+    out = src
+    for m in reversed(matches):
+        indent = m.group(1)
+        rep = (f"{indent}androidx.compose.foundation.layout.Column {{ headerContent(); "
+               f"com.metrolist.music.discover.v21.ui.LibraryPlaylistToolsBanner {{ navController.navigate(com.metrolist.music.discover.v2.ui.V2Routes.PLAYLIST_TOOLS) }} }} // {MARK} playlists-tools")
+        out = out[:m.start()] + rep + out[m.end():]
+    return out
+
 edit("app/src/main/kotlin/com/metrolist/music/playback/MusicService.kt", music_service, "stats")
 edit("app/src/main/kotlin/com/metrolist/music/ui/screens/HomeScreen.kt", home_screen, "home")
 edit("app/src/main/kotlin/com/metrolist/music/utils/Updater.kt", updater, "updater")
@@ -159,6 +185,8 @@ edit("app/src/main/kotlin/com/metrolist/music/ui/player/MiniPlayer.kt", miniplay
 edit("app/src/main/kotlin/com/metrolist/music/App.kt", space_app, "space-app")
 edit("app/src/main/kotlin/com/metrolist/music/MainActivity.kt", space_activity, "space-activity")
 edit("app/src/main/kotlin/com/metrolist/music/playback/MusicService.kt", space_service, "space-service")
+edit("app/src/main/kotlin/com/metrolist/music/ui/screens/HomeScreen.kt", home_quick_add, "home-quick-add")
+edit("app/src/main/kotlin/com/metrolist/music/ui/screens/library/LibraryPlaylistsScreen.kt", playlists_tools, "playlists-tools")
 if errors:
     for e in errors: print("::error::" + e)
     sys.exit(3)

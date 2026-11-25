@@ -132,7 +132,7 @@ private fun ThemeCard(t: DTheme, selected: Boolean, modifier: Modifier, onClick:
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(t.emoji, fontSize = 22.sp)
                 Spacer(Modifier.width(6.dp))
-                Text(t.he, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(t.he, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.height(10.dp))
             // a tiny fake screen: hero + chips + nav dots
@@ -141,7 +141,7 @@ private fun ThemeCard(t: DTheme, selected: Boolean, modifier: Modifier, onClick:
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf(t.accent, t.accent2, t.accent3).forEach { c -> Box(Modifier.width(28.dp).height(10.dp).clip(RoundedCornerShape(50)).background(Color(c).copy(alpha = 0.8f))) }
             }
-            if (selected) Text("✓ פעילה", color = Color.White, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 6.dp))
+            if (selected) Text("✓ פעילה", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 6.dp))
         }
     }
 }

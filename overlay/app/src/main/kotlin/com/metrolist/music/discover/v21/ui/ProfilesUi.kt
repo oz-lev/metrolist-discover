@@ -58,6 +58,7 @@ import com.metrolist.music.discover.v2.ui.V2Page
 import com.metrolist.music.discover.v2.ui.V2Rtl
 import com.metrolist.music.discover.v2.ui.toast
 import com.metrolist.music.discover.v21.V21Profiles
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 private val PROFILE_EMOJIS = listOf("😎", "💪", "🎧", "🌙", "🚗", "🥳", "👤", "🔥", "💔", "🧘", "🎮", "📚", "☕", "🏖️", "🕺", "👑")
@@ -157,7 +158,7 @@ fun ProfileQuickSheet(onDismiss: () -> Unit, onManage: () -> Unit) {
                         Column(Modifier.weight(1f)) {
                             Text(p.name + if (on) "  ✓" else "", fontWeight = FontWeight.Bold, color = if (on) Color.White else MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(when {
-                                p.guest -> "לא נרשם כלום, משתמש בטעם הראשי"
+                                p.guest -> "אורח: פרופיל נקי, לא נרשם כלום"
                                 V2Engine.isWarm(p.id) -> "מוכן, נפתח מיד"
                                 else -> "טעם ומיקסים משלו"
                             }, style = MaterialTheme.typography.bodySmall, color = if (on) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
@@ -182,7 +183,18 @@ fun ProfileQuickSheet(onDismiss: () -> Unit, onManage: () -> Unit) {
 @Composable
 fun ProfilesScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
+    val db = com.metrolist.music.LocalDatabase.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val version by V2Settings.version.collectAsStateWithLifecycle()
+    var leaked by remember { mutableStateOf<com.metrolist.music.discover.DiscoverRepository.LeakedPlaySummary?>(null) }
+    var confirmCleanLeaked by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(ProfileScope.active) {
+        if (ProfileScope.active == ProfileScope.DEFAULT) {
+            leaked = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { com.metrolist.music.discover.DiscoverRepository(ctx.applicationContext, db).inspectLeakedLegacyPlays() }.getOrNull()
+            }
+        }
+    }
     val s = remember(version) { V2Settings.get(ctx) }
     val list = remember(version) { V21Profiles.list(ctx) }
     var edit by remember { mutableStateOf<DProfile?>(null) }
@@ -228,14 +240,33 @@ fun ProfilesScreen(onBack: () -> Unit) {
                         val p = list.firstOrNull { it.id == r.profileId }
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                             val days = if (r.days.size == 7) "כל יום" else DAYS.filter { it.second in r.days }.joinToString(" ") { it.first + "׳" }
-                            Text("${p?.emoji ?: "?"} ${p?.name ?: "נמחק"} · $days · ${hhmm(r.fromMinute)}–${hhmm(r.toMinute)}", color = Color.White, modifier = Modifier.weight(1f))
-                            Text("✕", color = Color.White, fontSize = 18.sp, modifier = Modifier.clip(CircleShape).clickable { s.autoRules = rules.filterIndexed { j, _ -> j != i } }.padding(8.dp))
+                            Text("${p?.emoji ?: "?"} ${p?.name ?: "נמחק"} · $days · ${hhmm(r.fromMinute)}–${hhmm(r.toMinute)}", color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+                            Text("✕", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 18.sp, modifier = Modifier.clip(CircleShape).clickable { s.autoRules = rules.filterIndexed { j, _ -> j != i } }.padding(8.dp))
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
                         Pill("➕ חוק חדש", selected = true) { addRule = true }
                         Pill("💼 עבודה א׳–ה׳ 9–17") { s.autoRules = s.autoRules + AutoRule("work", setOf(7, 1, 2, 3, 4), 9 * 60, 17 * 60); s.autoSwitch = true }
                         Pill("🌙 לילה 23–6") { s.autoRules = s.autoRules + AutoRule("night", (1..7).toSet(), 23 * 60, 6 * 60); s.autoSwitch = true }
+                    }
+                }
+            }
+        }
+        item(key = "isolation_status") {
+            com.metrolist.music.discover.v2.ui.V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("הפרדה מוחלטת בין פרופילים (v15) ✓", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text(
+                        "מופרד 100% לכל פרופיל: מסד השירים וההיסטוריה (song.db), מסד ה-Discover ולמידת הטעם (discover_profile.db), פלייליסטים ולייקים, חיפושים, הורדות, מטמון נגן ותמונות, משימות רקע (WorkManager), מיקסים שמורים, פלייליסט פעיל, הגדרות וחשבון YouTube.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    val lk = leaked
+                    if (ProfileScope.active == ProfileScope.DEFAULT && lk != null && lk.count > 0) {
+                        Spacer(Modifier.width(4.dp))
+                        Pill("🧹 ניקוי ${lk.count} השמעות שהתערבבו לפני ההפרדה", selected = true) {
+                            confirmCleanLeaked = true
+                        }
                     }
                 }
             }
@@ -249,6 +280,31 @@ fun ProfilesScreen(onBack: () -> Unit) {
         creating = false; edit = null
     }
     if (addRule) AutoRuleDialog(list, onDismiss = { addRule = false }) { r -> s.autoRules = s.autoRules + r; s.autoSwitch = true; addRule = false }
+    if (confirmCleanLeaked && leaked != null && leaked!!.count > 0) {
+        val lk = leaked!!
+        AlertDialog(
+            onDismissRequest = { confirmCleanLeaked = false },
+            title = { Text("ניקוי השמעות שהתערבבו לפני ההפרדה") },
+            text = {
+                val sampleText = if (lk.sampleTitles.isNotEmpty()) "\nדוגמאות: " + lk.sampleTitles.joinToString(", ") else ""
+                Text("נמצאו ${lk.count} השמעות בהיסטוריה הראשית שנוגנו מפרופילים אחרים לפני גרסה 13.7.0.12 (כשהמסד עדיין היה משותף).$sampleText\n\nלהסיר רק את השורות האלה מההיסטוריה של ״אני״? הפעולה לא מוחקת שירים או פלייליסטים.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmCleanLeaked = false
+                    scope.launch {
+                        val removed = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            runCatching { com.metrolist.music.discover.DiscoverRepository(ctx.applicationContext, db).cleanLeakedLegacyPlays() }.getOrDefault(0)
+                        }
+                        V2Engine.invalidate()
+                        leaked = null
+                        toast(ctx, "✓ הוסרו $removed השמעות שהתערבבו")
+                    }
+                }) { Text("נקה עכשיו") }
+            },
+            dismissButton = { TextButton(onClick = { confirmCleanLeaked = false }) { Text("ביטול") } },
+        )
+    }
     confirmDelete?.let { p ->
         AlertDialog(
             onDismissRequest = { confirmDelete = null },

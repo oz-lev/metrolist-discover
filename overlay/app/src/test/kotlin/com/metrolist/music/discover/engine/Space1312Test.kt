@@ -47,10 +47,12 @@ class Space1312Test {
     @Test fun onlyTheRegistryDiscoverDbAndJobDbStayDeviceWide() {
         assertEquals("databases/metrolist_discover.db", SpacePaths.databasePath("gym", "metrolist_discover.db"))
         assertTrue(SpacePaths.isGlobalDb("metrolist_discover.db-wal"))
-        assertTrue(SpacePaths.isGlobalDb("androidx.work.workdb"))
+        // 13.7.0.15: WorkManager DB/prefs and per-profile discover_profile.db are isolated per space
+        assertFalse(SpacePaths.isGlobalDb("androidx.work.workdb"))
+        assertFalse(SpacePaths.isGlobalDb(SpacePaths.PROFILE_DISCOVER_DB))
         assertFalse(SpacePaths.isGlobalDb("song.db"))
         assertEquals("discover_space", SpacePaths.prefsName("gym", "discover_space"))
-        assertEquals("androidx.work.util.preferences", SpacePaths.prefsName("gym", "androidx.work.util.preferences"))
+        assertEquals("sp_gym__androidx.work.util.preferences", SpacePaths.prefsName("gym", "androidx.work.util.preferences"))
         // an absolute path is never re-rooted
         assertEquals("/data/x/y.db", SpacePaths.databasePath("gym", "/data/x/y.db"))
     }
@@ -69,7 +71,7 @@ class Space1312Test {
         val me = SpacePaths.deletion("me")
         assertTrue(me.dirs.isEmpty()); assertNull(me.prefsPrefix)
         val gym = SpacePaths.deletion("gym")
-        assertEquals(listOf("spaces/gym", "cache/spaces/gym", "app_webview_space_gym"), gym.dirs)
+        assertEquals(listOf("spaces/gym", "cache/spaces/gym", "code_cache/spaces/gym", "app_webview_space_gym"), gym.dirs)
         assertEquals("sp_gym__", gym.prefsPrefix)
         // everything gym resolves to lies inside what its deletion removes
         val all = listOf(SpacePaths.databasePath("gym", "song.db"), SpacePaths.filesDir("gym") + "/datastore/settings.preferences_pb", SpacePaths.cacheDir("gym") + "/coil")
@@ -139,6 +141,6 @@ class Space1312Test {
         // the overnight offline mix is per profile now; "me" keeps its original key
         assertEquals("p.gym.v2.offline.ids", ProfileScope.key("v2.offline.ids", "gym"))
         assertEquals("v2.offline.ids", ProfileScope.key("v2.offline.ids", "me"))
-        assertEquals("v2.colors", ProfileScope.key("v2.colors", "gym"))
+        assertEquals("p.gym.v2.colors", ProfileScope.key("v2.colors", "gym"))
     }
 }

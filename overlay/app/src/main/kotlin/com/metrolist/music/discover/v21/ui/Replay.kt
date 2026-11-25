@@ -89,11 +89,11 @@ fun ReplayScreen(onBack: () -> Unit) {
         item(key = "artists") {
             Box(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                 Group("🎤", "אמני הטופ", Brush.linearGradient(listOf(Color(0xFF7C2D12), Color(0xFFEA580C)))) {
-                    if (artists.isEmpty()) Text("אין עדיין נתונים לתקופה הזו", color = Color.White)
+                    if (artists.isEmpty()) Text("אין עדיין נתונים לתקופה הזו", color = MaterialTheme.colorScheme.onSurface)
                     artists.forEachIndexed { i, (name, n) ->
                         Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                            Text("${i + 1}. $name", color = Color.White, fontWeight = if (i < 3) FontWeight.ExtraBold else FontWeight.Medium, modifier = Modifier.weight(1f))
-                            Text("$n", color = Color.White.copy(alpha = 0.85f))
+                            Text("${i + 1}. $name", color = MaterialTheme.colorScheme.onSurface, fontWeight = if (i < 3) FontWeight.ExtraBold else FontWeight.Medium, modifier = Modifier.weight(1f))
+                            Text("$n", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -123,11 +123,11 @@ fun ReplayScreen(onBack: () -> Unit) {
                         }
                     }
                     Row(Modifier.fillMaxWidth()) {
-                        Text("00", color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp, modifier = Modifier.weight(1f))
-                        Text("12", color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp, modifier = Modifier.weight(1f))
-                        Text("23", color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp)
+                        Text("00", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        Text("12", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        Text("23", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     }
-                    Text("השעה הכי חמה שלך: ${"%02d".format(peak)}:00", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("השעה הכי חמה שלך: ${"%02d".format(peak)}:00", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -135,9 +135,9 @@ fun ReplayScreen(onBack: () -> Unit) {
             val o = TasteStats.obscurity(hist)
             Box(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                 Group("🕶️", "מדד הייחודיות", Brush.linearGradient(listOf(Color(0xFF3B0764), Color(0xFF9333EA)))) {
-                    Text("$o/100", color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Black)
-                    Text(TasteStats.obscurityLabel(o), color = Color.White, fontWeight = FontWeight.Bold)
-                    Text("כמה הטעם שלך מפוזר: 0 = תמיד אותם אמנים, 100 = זנב ארוך של אמנים.", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
+                    Text("$o/100", color = MaterialTheme.colorScheme.onSurface, fontSize = 40.sp, fontWeight = FontWeight.Black)
+                    Text(TasteStats.obscurityLabel(o), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                    Text("כמה הטעם שלך מפוזר: 0 = תמיד אותם אמנים, 100 = זנב ארוך של אמנים.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -145,8 +145,8 @@ fun ReplayScreen(onBack: () -> Unit) {
             val c = DailyChallenge.compute(hist, now)
             Box(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                 Group("🎯", "האתגר היומי", Brush.linearGradient(listOf(Color(0xFF14532D), Color(0xFF16A34A)))) {
-                    Text(if (c.doneToday) "✅ בוצע היום: ${c.newArtistToday ?: "אמן חדש"}" else "היום: תשמע אמן אחד שלא שמעת אף פעם", color = Color.White, fontWeight = FontWeight.Bold)
-                    Text("רצף: ${c.streak} ימים · סה״כ ${c.totalDone} אתגרים", color = Color.White.copy(alpha = 0.85f))
+                    Text(if (c.doneToday) "✅ בוצע היום: ${c.newArtistToday ?: "אמן חדש"}" else "היום: תשמע אמן אחד שלא שמעת אף פעם", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                    Text("רצף: ${c.streak} ימים · סה״כ ${c.totalDone} אתגרים", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

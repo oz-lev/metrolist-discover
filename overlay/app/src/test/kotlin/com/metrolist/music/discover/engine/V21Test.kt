@@ -98,7 +98,7 @@ class V21Test {
             ProfileScope.active = "me"; put("v2.boldness", "0.9"); put("tuner.state", "ME"); put("v2.colors", "shared")
             ProfileScope.active = "gym"
             assertNull(get("v2.boldness")); assertNull(get("tuner.state"))
-            assertEquals("shared", get("v2.colors"))                 // caches stay global
+            assertNull(get("v2.colors"))                              // 13.7.0.15: isolated per profile
             put("v2.boldness", "0.1"); put("v21.theme", "PHONK_RED")
             ProfileScope.active = "me"
             assertEquals("0.9", get("v2.boldness")); assertEquals("ME", get("tuner.state")); assertNull(get("v21.theme"))

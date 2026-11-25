@@ -63,6 +63,67 @@ class DiscoverRepository(private val context: Context, private val database: Mus
     fun hiddenArtists(): Set<String> = readSet(K_HIDDEN_ARTISTS)
     fun hiddenCount(): Int = hiddenSongs().size + hiddenArtists().size + lessArtists().size
     fun clearHidden() { store.put(K_HIDDEN_SONGS, null); store.put(K_HIDDEN_ARTISTS, null); store.put(K_LESS_ARTISTS, null) }
+    // 13.7.0.15: boosted artists + individual feedback management (per profile)
+    fun boostedArtists(): Set<String> = com.metrolist.music.discover.engine.TasteModel.decodeBoosted(store.get(K_BOOSTED_ARTISTS))
+    fun setBoostedArtist(artistId: String, boost: Boolean) {
+        val cur = boostedArtists().toMutableSet()
+        if (boost) cur += artistId else cur -= artistId
+        store.put(K_BOOSTED_ARTISTS, com.metrolist.music.discover.engine.TasteModel.encodeBoosted(cur))
+    }
+    fun unhideSong(songId: String) {
+        store.put(K_HIDDEN_SONGS, (readSet(K_HIDDEN_SONGS) - songId).joinToString("\n").ifBlank { null })
+    }
+    fun unhideArtist(artistId: String) {
+        store.put(K_HIDDEN_ARTISTS, (readSet(K_HIDDEN_ARTISTS) - artistId).joinToString("\n").ifBlank { null })
+    }
+    fun clearLessArtist(artistId: String) {
+        val m = lessArtists() - artistId
+        store.put(K_LESS_ARTISTS, if (m.isEmpty()) null else com.metrolist.music.discover.engine.Feedback.encodeLess(m))
+    }
+
+    /** 13.7.0.15: inspect pre-13.7.0.12 leaked plays in the main profile's legacy song.db (read-only). */
+    data class LeakedPlaySummary(val count: Int, val sampleTitles: List<String>, val earliestTs: Long?, val latestTs: Long?)
+
+    fun inspectLeakedLegacyPlays(): LeakedPlaySummary {
+        if (ProfileScope.active != ProfileScope.DEFAULT) return LeakedPlaySummary(0, emptyList(), null, null)
+        val epoch = store.spaceEpoch() ?: return LeakedPlaySummary(0, emptyList(), null, null)
+        val db = database.openHelper.readableDatabase
+        val titles = HashMap<String, String>()
+        db.query("SELECT id, title FROM song").use { c -> while (c.moveToNext()) titles[c.getString(0)] = c.getString(1) ?: "" }
+        val events = ArrayList<PlayEvent>()
+        db.query("SELECT songId, timestamp, playTime FROM event WHERE timestamp < ?", arrayOf(epoch.toString())).use { c ->
+            while (c.moveToNext()) events += PlayEvent(c.getString(0), c.getLong(1), c.getLong(2))
+        }
+        val own = store.allPlays().map { p -> OwnedPlay(PlayEvent(p.songId, p.ts, p.playedMs, p.durationMs, p.fromDiscover), p.profileId) }
+        val leaked = SpaceOwnership.leakedLegacyEvents(events, own, store.timeline(), epoch)
+        if (leaked.isEmpty()) return LeakedPlaySummary(0, emptyList(), null, null)
+        val samples = leaked.mapNotNull { titles[it.trackId]?.takeIf { t -> t.isNotBlank() } }.distinct().take(5)
+        return LeakedPlaySummary(leaked.size, samples, leaked.minOf { it.timestampMs }, leaked.maxOf { it.timestampMs })
+    }
+
+    /** 13.7.0.15: explicitly confirmed cleanup of pre-13.7.0.12 leaked events from "me"'s song.db. Never auto-called. */
+    fun cleanLeakedLegacyPlays(): Int {
+        if (ProfileScope.active != ProfileScope.DEFAULT) return 0
+        val epoch = store.spaceEpoch() ?: return 0
+        val rdb = database.openHelper.readableDatabase
+        val events = ArrayList<PlayEvent>()
+        rdb.query("SELECT songId, timestamp, playTime FROM event WHERE timestamp < ?", arrayOf(epoch.toString())).use { c ->
+            while (c.moveToNext()) events += PlayEvent(c.getString(0), c.getLong(1), c.getLong(2))
+        }
+        val own = store.allPlays().map { p -> OwnedPlay(PlayEvent(p.songId, p.ts, p.playedMs, p.durationMs, p.fromDiscover), p.profileId) }
+        val leaked = SpaceOwnership.leakedLegacyEvents(events, own, store.timeline(), epoch)
+        if (leaked.isEmpty()) return 0
+        val wdb = database.openHelper.writableDatabase
+        var removed = 0
+        wdb.beginTransaction()
+        try {
+            for (e in leaked) {
+                removed += wdb.delete("event", "songId = ? AND timestamp = ?", arrayOf(e.trackId, e.timestampMs.toString()))
+            }
+            wdb.setTransactionSuccessful()
+        } finally { wdb.endTransaction() }
+        return removed
+    }
     // 13.7.0.14: "less like this" (soft, per artist, capped 3) and the whole feedback the mixes read
     fun lessArtists(): Map<String, Int> = com.metrolist.music.discover.engine.Feedback.decodeLess(store.get(K_LESS_ARTISTS))
     fun feedback(): com.metrolist.music.discover.engine.Feedback = com.metrolist.music.discover.engine.Feedback(hiddenSongs(), hiddenArtists(), lessArtists())
@@ -394,6 +455,7 @@ class DiscoverRepository(private val context: Context, private val database: Mus
         const val K_HIDDEN_SONGS = "discover.hiddenSongs"
         const val K_HIDDEN_ARTISTS = "discover.hiddenArtists"
         const val K_LESS_ARTISTS = "discover.lessArtists"
+        const val K_BOOSTED_ARTISTS = "discover.boostedArtists"
 
         /** (skipFraction, skipSeconds, fullFraction) as last computed from the user's data, or the defaults. */
         fun thresholds(store: DiscoverStore): Triple<Double, Double, Double> =

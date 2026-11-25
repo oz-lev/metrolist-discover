@@ -110,6 +110,8 @@ object StatsCache {
     private var key: String? = null
     private var index: StatsIndex? = null
     private val reports = LinkedHashMap<String, StatsReport>()
+    init { com.metrolist.music.discover.space.ProfileSpace.onBeforeSwitch { clear() } }
+    fun clear() = synchronized(this) { key = null; index = null; reports.clear() }
 
     private fun albumNames(db: MusicDatabase): Map<String, String> {
         val m = HashMap<String, String>()

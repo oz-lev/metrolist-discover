@@ -93,7 +93,7 @@ fun QueuesScreen(onBack: () -> Unit) {
         slots.forEachIndexed { i, q ->
             item(key = "slot_$i") {
                 Group("${i + 1}", q?.name ?: "משבצת ריקה", Brush.linearGradient(if (q == null) listOf(Color(0xFF1F2937), Color(0xFF374151)) else listOf(Color(0xFF4C1D95), Color(0xFF7C3AED)))) {
-                    if (q != null) Text("${q.tracks.size} שירים · נשמר ${fmt.format(Date(q.savedAt))}", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
+                    if (q != null) Text("${q.tracks.size} שירים · נשמר ${fmt.format(Date(q.savedAt))}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                         Pill("💾 שמור כאן") {
                             val cur = V21Playback.currentQueue()

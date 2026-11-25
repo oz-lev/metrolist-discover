@@ -38,13 +38,14 @@ object ProfileScope {
     @Volatile var active: String = DEFAULT
     @Volatile var guest: Boolean = false
 
-    /** 13.7.0.12: the overnight offline mix (v2.offline.*) is per profile too; only the art-colour cache stays global. */
-    private val GLOBAL = setOf("v2.colors")
+    /** 13.7.0.15: complete profile isolation — even the art-colour cache (v2.colors) is per profile now; only g.* registry keys are global. */
+    private val GLOBAL = emptySet<String>()
     /** 13.7.0.10: Discover's caches, "not for me" lists and skip thresholds are per profile too (they leaked before). */
     private val SCOPED_EXTRA = setOf("tuner.state", "tuner.likeAwarded",
         "discover.cache", "discover.cacheTs", "mixes.cache", "mixes.cacheTs",
         "discover.hiddenSongs", "discover.hiddenArtists", "profile.thresholds",
-        /* 13.7.0.14 */ "discover.lessArtists")
+        /* 13.7.0.14 */ "discover.lessArtists",
+        /* 13.7.0.15 */ "discover.boostedArtists")
     /** keys copied once from the shared (main) value into every existing profile when 13.7.0.10 first runs */
     val MIGRATE_COPY = listOf("discover.hiddenSongs", "discover.hiddenArtists", "profile.thresholds")
 

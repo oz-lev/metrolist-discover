@@ -1,5 +1,5 @@
 /**
- * Metrolist Discover 13.7.0.12 (fork addition) - GPL-3.0
+ * Metrolist Discover 13.7.0.15 (fork addition) - GPL-3.0
  */
 package com.metrolist.music.discover.space
 
@@ -10,20 +10,62 @@ import android.database.DatabaseErrorHandler
 import android.database.sqlite.SQLiteDatabase
 import com.metrolist.music.discover.engine.SpacePaths
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 
 /**
- * The storage of one non-main profile: the app's own private locations, re-rooted under spaces/<id> (see [SpacePaths]).
- * Everything that reaches files through a Context (Room via getDatabasePath/openOrCreateDatabase, DataStore via filesDir,
- * media3's caches and download index, Coil's disk cache, SharedPreferences, FileProvider roots) follows automatically.
+ * 13.7.0.15: complete storage isolation for one non-main profile ("space").
+ * Re-roots filesDir, cacheDir, codeCacheDir, noBackupFilesDir, dataDir, getDir, openFileInput/Output/deleteFile/fileList,
+ * externalFilesDir/externalCacheDir, databases (including discover_profile.db and androidx.work.workdb), and SharedPreferences.
  */
 class SpaceContext(base: Context, val space: String) : ContextWrapper(base) {
     private val data: File = base.filesDir.parentFile ?: base.filesDir
 
     private fun dir(rel: String): File = File(data, rel).apply { if (!isDirectory) mkdirs() }
 
+    private fun safeChild(parent: File, name: String): File {
+        require(!name.contains(File.separatorChar)) { "File $name contains a path separator" }
+        return File(parent, name)
+    }
+
+    override fun getDataDir(): File = SpacePaths.root(space)?.let { dir(it) } ?: super.getDataDir()
+
     override fun getFilesDir(): File = dir(SpacePaths.filesDir(space))
 
+    override fun getNoBackupFilesDir(): File = dir(SpacePaths.noBackupDir(space))
+
+    override fun getDir(name: String, mode: Int): File = dir(SpacePaths.customDir(space, name))
+
     override fun getCacheDir(): File = File(baseContext.cacheDir, "spaces/" + SpacePaths.sanitize(space)).apply { if (!isDirectory) mkdirs() }
+
+    override fun getCodeCacheDir(): File = File(baseContext.codeCacheDir, "spaces/" + SpacePaths.sanitize(space)).apply { if (!isDirectory) mkdirs() }
+
+    override fun getExternalFilesDir(type: String?): File? {
+        val baseExt = baseContext.getExternalFilesDir(type) ?: return null
+        val sub = SpacePaths.externalSubdir(space) ?: return baseExt
+        return File(baseExt, sub).apply { if (!isDirectory) mkdirs() }
+    }
+
+    override fun getExternalCacheDir(): File? {
+        val baseExt = baseContext.externalCacheDir ?: return null
+        val sub = SpacePaths.externalSubdir(space) ?: return baseExt
+        return File(baseExt, sub).apply { if (!isDirectory) mkdirs() }
+    }
+
+    override fun getFileStreamPath(name: String): File = safeChild(filesDir, name)
+
+    override fun openFileInput(name: String): FileInputStream = FileInputStream(safeChild(filesDir, name))
+
+    override fun openFileOutput(name: String, mode: Int): FileOutputStream {
+        val append = (mode and Context.MODE_APPEND) != 0
+        val f = safeChild(filesDir, name)
+        f.parentFile?.mkdirs()
+        return FileOutputStream(f, append)
+    }
+
+    override fun deleteFile(name: String): Boolean = safeChild(filesDir, name).delete()
+
+    override fun fileList(): Array<String> = filesDir.list() ?: emptyArray()
 
     override fun getDatabasePath(name: String): File {
         if (name.contains(File.separatorChar)) return File(name)

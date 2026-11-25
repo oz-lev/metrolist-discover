@@ -90,6 +90,7 @@ fun main(args: Array<String>) {
     if ("--mixes" in args) { mixReport(h); return }
     if ("--personal" in args) { personalReport(h); return }
     if ("--context" in args) { contextReport(h); return }
+    if ("--taste" in args) { tasteReport(h); return }
     if ("--context-grid" in args) { contextGrid(h); return }
     if ("--newmixes" in args) { newMixesReport(h); return }
     if ("--grid3" in args) { reportGrid3(h); return }

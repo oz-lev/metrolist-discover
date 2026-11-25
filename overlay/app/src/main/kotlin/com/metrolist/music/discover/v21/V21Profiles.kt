@@ -105,9 +105,11 @@ object V21Profiles {
         val store = DiscoverStore.get(ctx)
         val p = create(ctx, src.name + " 2", src.emoji, src.color).copy(guest = src.guest)
         saveList(ctx, list(ctx).map { if (it.id == p.id) p else it })
-        val entries = if (src.id == ProfileScope.DEFAULT) {
-            store.rawEntries("").filter { ProfileScope.scoped(it.key) }
-        } else store.rawEntries("p.${src.id}.").mapKeys { it.key.removePrefix("p.${src.id}.") }
+        val entries = when (src.id) {
+            ProfileScope.active -> store.activeProfileEntries()
+            ProfileScope.DEFAULT -> store.rawEntries("").filter { ProfileScope.scoped(it.key) }
+            else -> store.rawEntries("p.${src.id}.").mapKeys { it.key.removePrefix("p.${src.id}.") }
+        }
         // settings and learned weights are copied; the listening history and the caches built from it are not
         // (13.7.0.10: a copy starts with its own, empty history, so nothing of the source leaks into it later)
         entries.filterKeys { it !in DUP_SKIP }.forEach { (k, v) -> store.rawPut(ProfileScope.key(k, p.id), v) }
@@ -128,6 +130,7 @@ object V21Profiles {
         store.rawDeletePrefix("p.$id.")
         store.rawPut("g.init.$id", null)
         store.rawPut("g.seed.$id", null)
+        store.rawPut("g.profdb15.$id", null)
         store.rawPut("g.secretPrevPause.$id", null)
         // its Discover listens go with it; its stretches of the old shared timeline become a tombstone no profile reads
         runCatching { store.deletePlaysOf(id); store.reassignTimeline(id, "x.$id") }

@@ -135,7 +135,7 @@ class ProfileIsolation1310Test {
             assertEquals(k, ProfileScope.key(k, "me"))
         }
         assertFalse(ProfileScope.scoped("g.profiles"))
-        assertFalse(ProfileScope.scoped("v2.colors"))
+        assertTrue(ProfileScope.scoped("v2.colors")) // 13.7.0.15: isolated per profile
     }
 
     @Test fun foreignTracksListsOnlySongsThatNeverHappenedInThisProfile() {

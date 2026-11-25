@@ -117,13 +117,12 @@ fun V21HomeExtras(run: (String, suspend () -> BuiltMix) -> Unit) {
         // daily challenge
         val c = challenge
         if (s.challengeOnHome && c != null) {
-            V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), brush = Brush.linearGradient(listOf(Color(0xFF14532D), Color(0xFF16A34A))),
-                onClick = { nav.navigate(V2Routes.REPLAY) }) {
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Text("🎯", fontSize = 26.sp)
+            V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), onClick = { nav.navigate(V2Routes.REPLAY) }) {
+                Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                    Text("🎯", fontSize = 24.sp)
                     Column(Modifier.padding(start = 10.dp).weight(1f)) {
-                        Text(if (c.doneToday) "אתגר היום בוצע! ✅" else "אתגר היום: אמן שלא שמעת אף פעם", color = Color.White, fontWeight = FontWeight.ExtraBold)
-                        Text(if (c.doneToday) "גילית את ${c.newArtistToday ?: "אמן חדש"} · רצף ${c.streak}" else "רצף נוכחי: ${c.streak} · לחץ על 🎲 רולטה או 👆 טעימות", color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
+                        Text(if (c.doneToday) "אתגר היום בוצע! ✅" else "אתגר היום: אמן שלא שמעת אף פעם", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                        Text(if (c.doneToday) "גילית את ${c.newArtistToday ?: "אמן חדש"} · רצף ${c.streak}" else "רצף נוכחי: ${c.streak} · לחץ על רולטה או טעימות", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -132,30 +131,39 @@ fun V21HomeExtras(run: (String, suspend () -> BuiltMix) -> Unit) {
         // Shazam-style recognise button (opens Metrolist's own recognition screen)
         PulsingRecognizeButton { runCatching { nav.navigate("recognition") } }
 
-        // toolbox
-        Text("ארגז הכלים 🧰", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(start = 16.dp, top = 14.dp, bottom = 4.dp))
+        // unified M3 toolbox
+        Text("ארגז הכלים", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, top = 14.dp, bottom = 6.dp))
         val tools = listOf(
-            Tool("🧪", "בונה מיקסים", 0xFF7C3AED, 0xFF22D3EE) { nav.navigate(V2Routes.MIXLAB) },
-            Tool("🎤", "קריוקי", 0xFFDB2777, 0xFF7C3AED) { nav.navigate(V2Routes.KARAOKE) },
-            Tool("🚗", "מצב רכב", 0xFF0EA5E9, 0xFF1E3A8A) { nav.navigate(V2Routes.CAR) },
-            Tool("👆", "טעימות", 0xFFF97316, 0xFFDB2777) { nav.navigate(V2Routes.SAMPLES) },
-            Tool("🤝", "Blend", 0xFF10B981, 0xFF0F766E) { nav.navigate(V2Routes.BLEND) },
-            Tool("🧯", "פאניקה", 0xFF64748B, 0xFF0EA5E9) { run("🧯 מרגיע…") { V2Engine.panic(ctx, db) } },
-            Tool("🔀", "ערבוב חכם", 0xFF8B5CF6, 0xFFEC4899) { scope.launch { if (!smartShuffle(ctx, db, pc)) toast(ctx, "התור ריק, תתחיל משהו קודם") } },
-            Tool("📻", "חוגת עשורים", 0xFFF59E0B, 0xFF92400E) { decadeIndex = (decadeIndex + 1) % DECADES.size; val d = DECADES[decadeIndex]; run("📻 שנות ה-$d…") { V2Engine.decade(ctx, db, d) } },
-            Tool("🔁", "Replay", 0xFFEA580C, 0xFF7C2D12) { nav.navigate(V2Routes.REPLAY) },
-            Tool("📊", "סטטיסטיקות", 0xFF0EA5E9, 0xFF6366F1) { nav.navigate(V2Routes.STATS) },
-            Tool("🗂️", "התורים שלי", 0xFF6366F1, 0xFF312E81) { nav.navigate(V2Routes.QUEUES) },
-            Tool("🎨", "עיצוב", 0xFFEC4899, 0xFF22D3EE) { nav.navigate(V2Routes.THEME) },
-            Tool("👥", "פרופילים", 0xFF94A3B8, 0xFF334155) { nav.navigate(V2Routes.PROFILES) },
+            Tool("🧪", "בונה מיקסים", 0L, 0L) { nav.navigate(V2Routes.MIXLAB) },
+            Tool("🧠", "שליטה בטעם", 0L, 0L) { nav.navigate(V2Routes.TASTE_CONTROLS) },
+            Tool("🔀", "מיזוג פלייליסטים", 0L, 0L) { nav.navigate(V2Routes.PLAYLIST_TOOLS) },
+            Tool("🔎", "חיפושים מוזרים", 0L, 0L) { nav.navigate(V2Routes.SEARCH) },
+            Tool("📊", "סטטיסטיקות", 0L, 0L) { nav.navigate(V2Routes.STATS) },
+            Tool("👥", "פרופילים", 0L, 0L) { nav.navigate(V2Routes.PROFILES) },
+            Tool("🎤", "קריוקי", 0L, 0L) { nav.navigate(V2Routes.KARAOKE) },
+            Tool("🚗", "מצב רכב", 0L, 0L) { nav.navigate(V2Routes.CAR) },
+            Tool("👆", "טעימות", 0L, 0L) { nav.navigate(V2Routes.SAMPLES) },
+            Tool("🤝", "Blend", 0L, 0L) { nav.navigate(V2Routes.BLEND) },
+            Tool("🧯", "פאניקה", 0L, 0L) { run("מרגיע…") { V2Engine.panic(ctx, db) } },
+            Tool("🎲", "רולטה", 0L, 0L) {
+                scope.launch {
+                    val (seed, tr) = runCatching { V2Engine.roulette(ctx) }.getOrDefault("" to null)
+                    if (tr == null) toast(ctx, "הרולטה נתקעה, נסה שוב") else { pc.playTracks(listOf(tr), "רולטה"); toast(ctx, ""$seed" ← ${tr.title}") }
+                }
+            },
+            Tool("🔀", "ערבוב חכם", 0L, 0L) { scope.launch { if (!smartShuffle(ctx, db, pc)) toast(ctx, "התור ריק, תתחיל משהו קודם") } },
+            Tool("📻", "חוגת עשורים", 0L, 0L) { decadeIndex = (decadeIndex + 1) % DECADES.size; val d = DECADES[decadeIndex]; run("שנות ה-$d…") { V2Engine.decade(ctx, db, d) } },
+            Tool("🔁", "Replay", 0L, 0L) { nav.navigate(V2Routes.REPLAY) },
+            Tool("🗂️", "התורים שלי", 0L, 0L) { nav.navigate(V2Routes.QUEUES) },
+            Tool("🎨", "עיצוב", 0L, 0L) { nav.navigate(V2Routes.THEME) },
         )
-        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(tools.size) { i ->
                 val t = tools[i]
-                V2Card(Modifier.width(104.dp), brush = Brush.linearGradient(listOf(Color(t.c1), Color(t.c2))), onClick = { tap(); t.action() }) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text(t.emoji, fontSize = 28.sp)
-                        Text(t.title, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                V2Card(Modifier.width(108.dp), onClick = { tap(); t.action() }) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(t.emoji, fontSize = 24.sp)
+                        Text(t.title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }

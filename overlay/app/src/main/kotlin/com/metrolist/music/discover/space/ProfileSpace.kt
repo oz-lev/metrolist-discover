@@ -1,10 +1,12 @@
 /**
- * Metrolist Discover 13.7.0.12 (fork addition) - GPL-3.0
+ * Metrolist Discover 13.7.0.15 (fork addition) - GPL-3.0
  */
 package com.metrolist.music.discover.space
 
 import android.app.Activity
 import android.app.Application
+import android.app.NotificationManager
+import android.app.job.JobScheduler
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
@@ -14,15 +16,9 @@ import com.metrolist.music.discover.engine.SpacePaths
 import java.io.File
 
 /**
- * 13.7.0.12: every profile is a separate app instance on disk (see [SpacePaths]).
- *
- * The active profile is a tiny device-wide registry (shared_prefs/discover_space.xml) read in attachBaseContext, before
- * Hilt builds anything. For "me" the app's contexts are NOT wrapped at all, so the main profile runs on exactly the files
- * it always had. For any other profile the MainActivity and MusicService contexts are wrapped in a [SpaceContext]
- * (the Application routes its storage calls to one, see [SpaceApplication]) that points filesDir/cacheDir/databases/shared_prefs at that profile's own tree, so Metrolist's Room
- * database, its settings DataStore (YouTube account included), player cache, downloads, queue, image cache and every
- * SharedPreferences file are that profile's alone. Switching writes the registry and restarts the process
- * ([SpaceSwitchActivity], a ProcessPhoenix-style relaunch in a tiny separate process).
+ * 13.7.0.15: every profile is a completely isolated app instance on disk (see [SpacePaths]).
+ * Switching writes the registry synchronously, clears notifications / scheduled offline jobs / in-memory caches,
+ * and restarts the process via [SpaceSwitchActivity] (:space).
  */
 object ProfileSpace {
     private const val K_ACTIVE = "active"
@@ -35,6 +31,11 @@ object ProfileSpace {
     @Volatile var id: String = SpacePaths.DEFAULT
         private set
     @Volatile private var resolved = false
+
+    private val flushHooks = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+
+    /** Registers an in-memory cache flush callback run right before a profile switch kills the process. */
+    fun onBeforeSwitch(hook: () -> Unit) { flushHooks += hook }
 
     private fun registry(ctx: Context) = unwrap(ctx).getSharedPreferences(SpacePaths.REGISTRY_PREFS, Context.MODE_PRIVATE)
 
@@ -94,14 +95,17 @@ object ProfileSpace {
     fun pending(ctx: Context): String? = registry(ctx).getString(K_PENDING, null)
 
     /**
-     * Switch: registry first, then a clean restart into the new profile. [ctx] should be an Activity (the relaunch is a
-     * user-visible activity start). Returns false when nothing was done.
+     * Switch: flush caches & old notifications, write registry synchronously, then clean restart into the new profile.
      */
     fun switchAndRestart(ctx: Context, space: String, name: String, emoji: String): Boolean {
         val target = SpacePaths.sanitize(space)
         if (target == id) return false
         if (!commitActive(ctx, target)) return false
         val app = ctx.applicationContext
+        // Flush in-memory caches, cancel lingering media/app notifications and pending offline jobs before process exit
+        flushHooks.forEach { runCatching { it() } }
+        runCatching { (app.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager)?.cancelAll() }
+        runCatching { (app.getSystemService(Context.JOB_SCHEDULER_SERVICE) as? JobScheduler)?.cancelAll() }
         val launch = app.packageManager.getLaunchIntentForPackage(app.packageName) ?: return false
         val i = Intent(app, SpaceSwitchActivity::class.java)
             .putExtra(EXTRA_NAME, name).putExtra(EXTRA_EMOJI, emoji)
@@ -118,10 +122,15 @@ object ProfileSpace {
         if (SpacePaths.isLegacy(s) || s == id) return false
         val d = SpacePaths.deletion(s)
         val data = dataDir(ctx)
+        val base = unwrap(ctx)
         var ok = true
         for (rel in d.dirs) { val f = File(data, rel); if (f.exists() && !f.deleteRecursively()) ok = false }
+        d.externalSubdir?.let { sub ->
+            listOfNotNull(base.getExternalFilesDir(null), base.externalCacheDir).forEach { root ->
+                val f = File(root, sub); if (f.exists() && !f.deleteRecursively()) ok = false
+            }
+        }
         d.prefsPrefix?.let { pre ->
-            val base = unwrap(ctx)
             File(data, "shared_prefs").listFiles()?.filter { it.name.startsWith(pre) }?.forEach { f ->
                 val n = f.name.removeSuffix(".xml")
                 if (Build.VERSION.SDK_INT >= 24) runCatching { base.deleteSharedPreferences(n) }

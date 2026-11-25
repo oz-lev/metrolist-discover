@@ -22,6 +22,10 @@ on:
         description: Publish as a pre-release first (the in-app updater ignores it) so the APK can be checked; promote to latest afterwards
         type: boolean
         default: false
+      upstream_tag:
+        description: Optional upstream Metrolist tag override (e.g. v13.7.0). Empty = latest upstream release.
+        type: string
+        default: ""
 permissions:
   contents: write
   issues: write
@@ -41,7 +45,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          LATEST=$(gh api repos/MetrolistGroup/Metrolist/releases/latest --jq .tag_name)
+          if [ -n "${{ inputs.upstream_tag }}" ]; then
+            LATEST="${{ inputs.upstream_tag }}"
+          else
+            LATEST=$(gh api repos/MetrolistGroup/Metrolist/releases/latest --jq .tag_name)
+          fi
           CURRENT=$(tr -d '[:space:]' < UPSTREAM_TAG)
           [ -n "$LATEST" ] || { echo "::error::could not read the latest upstream release"; exit 1; }
           BUILD=false

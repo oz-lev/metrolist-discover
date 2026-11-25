@@ -151,8 +151,18 @@ fun MixesHubScreen(onBack: () -> Unit) {
         }
         item(key = "special_title") { SectionTitle("מיקסים מיוחדים") }
         item(key = "mixlab") {
-            SpecialCard("🧪", "בונה מיקסים", "אמנים, מצב רוח, אנרגיה, מוכר/חדש, אורך ושפה", Brush.linearGradient(listOf(Color(0xFF7C3AED), Color(0xFF22D3EE)))) {
+            SpecialCard("🧪", "בונה מיקסים", "עד 25 אמנים עם משקלים, שמירת מיקסים וייצוא לפלייליסט", themeHero()) {
                 hubNav.navigate(V2Routes.MIXLAB)
+            }
+        }
+        item(key = "taste_controls") {
+            SpecialCard("🧠", "שליטה באלגוריתם ובטעם", "למידת טעם, גילוי/מוכר, דילוגים, גיוון וניהול אמנים", themeHero()) {
+                hubNav.navigate(V2Routes.TASTE_CONTROLS)
+            }
+        }
+        item(key = "playlist_tools") {
+            SpecialCard("🔀", "ניהול ומיזוג פלייליסטים", "מיזוג 2+ פלייליסטים, ניקוי כפילויות, פיצול וחיתוך", themeHero()) {
+                hubNav.navigate(V2Routes.PLAYLIST_TOOLS)
             }
         }
         item(key = "flip") {
@@ -166,12 +176,12 @@ fun MixesHubScreen(onBack: () -> Unit) {
             }
         }
         item(key = "trip") {
-            V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), brush = themeCool()) {
+            V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("🚗 אני נוסע ${tripMin.roundToInt()} דקות", color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
-                    Text("פלייליסט באורך של הנסיעה, בדיוק", color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
+                    Text("🚗 אני נוסע ${tripMin.roundToInt()} דקות", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("פלייליסט באורך של הנסיעה, בדיוק", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     Slider(value = tripMin, onValueChange = { tripMin = it }, valueRange = 5f..120f, steps = 22)
-                    GradientButton("בנה נסיעה ▶", Modifier.fillMaxWidth(), brush = themeHero()) {
+                    GradientButton("בנה נסיעה ▶", Modifier.fillMaxWidth()) {
                         val m = tripMin.roundToInt()
                         run("סופר דקות…") { V2Engine.trip(ctx, db, m) }
                     }
@@ -226,16 +236,20 @@ fun LabeledSlider(label: String, value: Float, startLabel: String, endLabel: Str
 }
 
 @Composable
-fun SpecialCard(emoji: String, title: String, sub: String, brush: Brush, onClick: () -> Unit) {
-    V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), brush = brush, onClick = onClick) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(18.dp)) {
-            Text(emoji, fontSize = 34.sp)
-            Spacer(Modifier.width(14.dp))
+fun SpecialCard(emoji: String, title: String, sub: String, @Suppress("UNUSED_PARAMETER") brush: Brush, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    V2Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp), onClick = onClick) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(14.dp)) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(44.dp).clip(CircleShape).background(cs.primaryContainer),
+            ) { Text(emoji, fontSize = 22.sp) }
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(title, color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
-                Text(sub, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
+                Text(title, color = cs.onSurface, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Text(sub, color = cs.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
-            Text("▶", color = Color.White, fontSize = 22.sp)
+            Text("‹", color = cs.onSurfaceVariant, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
