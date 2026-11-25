@@ -148,7 +148,7 @@ fun V21HomeExtras(run: (String, suspend () -> BuiltMix) -> Unit) {
             Tool("🎲", "רולטה", 0L, 0L) {
                 scope.launch {
                     val (seed, tr) = runCatching { V2Engine.roulette(ctx) }.getOrDefault("" to null)
-                    if (tr == null) toast(ctx, "הרולטה נתקעה, נסה שוב") else { pc.playTracks(listOf(tr), "רולטה"); toast(ctx, ""$seed" ← ${tr.title}") }
+                    if (tr == null) toast(ctx, "הרולטה נתקעה, נסה שוב") else { pc.playTracks(listOf(tr), "רולטה"); toast(ctx, "\"$seed\" ← ${tr.title}") }
                 }
             },
             Tool("🔀", "ערבוב חכם", 0L, 0L) { scope.launch { if (!smartShuffle(ctx, db, pc)) toast(ctx, "התור ריק, תתחיל משהו קודם") } },
